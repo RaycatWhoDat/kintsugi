@@ -1,8 +1,10 @@
 class ASTNode {}
 
-class AST::TOP is ASTNode {
+class AST::BlockValue is ASTNode {
     has ASTNode @.items = [];
 }
+
+class AST::TOP is AST::BlockValue {}
 
 class AST::WordAssignment is ASTNode {
     has Str $.name;
@@ -25,4 +27,14 @@ class AST::LogicValue is ASTNode {
 
 class AST::StringValue is ASTNode {
     has Str $.value;
+}
+
+class AST::FileValue is ASTNode {
+    has Str $.name;
+    has IO $.value is rw;
+}
+
+class AST::FunctionValue is ASTNode {
+    has @.params = [];
+    has ASTNode @.body = [];
 }

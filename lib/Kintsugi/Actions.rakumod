@@ -20,6 +20,24 @@ class Kintsugi::Actions {
     method datatype:sym<string>($/) {
         $/.make(AST::StringValue.new(value => ~$/));
     }
+
+    method datatype:sym<none>($/) {
+        $/.make(AST::NoneValue.new);
+    }
+
+    method datatype:sym<file>($/) {
+        $/.make(AST::FileValue.new(name => ~$/.chop: 1));
+    }
+
+    method datatype:sym<block>($/) {
+        my $block = AST::BlockValue.new;
+        $block.items.push(.made) for $<block-items><datatype>;
+        $/.make($block);
+    }
+
+    method datatype:sym<function>($/) {
+        $/.make(AST::FunctionValue.new(params => $<block>[0], body => $<block>[1]));
+    }
     
     method TOP($/) {
         my $top = AST::TOP.new;

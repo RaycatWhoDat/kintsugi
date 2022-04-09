@@ -4,7 +4,7 @@ grammar Kintsugi::Standard::Grammar is Kintsugi::Foundation::Grammar {
     token header { 'Kintsugi' <.ws> <block> }
 
     token datatype:sym<scope> { <scope> }
-    token datatype:sym<operator> { <operator> }
+    token datatype:sym<operator> { <operator> | <mezzanine> }
     token datatype:sym<date> { <date> }
     token datatype:sym<logic> { <logic> }
     
@@ -16,10 +16,10 @@ grammar Kintsugi::Standard::Grammar is Kintsugi::Foundation::Grammar {
         ]
     }
 
-    token operator {
-        | <[+\-*/\^=]>
+    token mezzanine {
         | '|>'
     }
+    
     token date {
         | \d ** 4 '-' \d ** 2 '-' \d ** 2
         | \d ** 2 '-' \d ** 2 '-' \d ** 2

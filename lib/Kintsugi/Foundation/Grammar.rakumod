@@ -9,12 +9,13 @@ grammar Kintsugi::Foundation::Grammar {
     token datatype:sym<directive> { <directive> }
     token datatype:sym<file> { <file> }
     token datatype:sym<function> { <function> }
+    token datatype:sym<operator> { <operator> }
     token datatype:sym<lit-word> { <lit-word> }
     token datatype:sym<get-word> { <get-word> }
     token datatype:sym<set-word> { <set-word> }
     token datatype:sym<string> { <string> }
     token datatype:sym<logic> { <logic> }
-    token datatype:sym<none> { <none> }
+    token datatype:sym<none> { <sym> }
     token datatype:sym<float> { <float> }
     token datatype:sym<integer> { <integer> }
     token datatype:sym<any-word> { <any-word> }
@@ -30,6 +31,7 @@ grammar Kintsugi::Foundation::Grammar {
     
     token file { '%' <any-safe-file-char>+ }
     token function { 'function' <.ws> <block> <.ws> <block> }
+    token operator { <[+\-*/\^=]> }
     
     token lit-word { '\'' <any-word-char>+ }
     token get-word { ':' <any-word-char>+ }
@@ -38,7 +40,6 @@ grammar Kintsugi::Foundation::Grammar {
 
     token string { '"' ~ '"' <string-contents> }
     token logic { 'true' | 'false' }
-    token none { 'none' }
     token float { \d* '.' \d+ }
     token integer { \d+ }
 
