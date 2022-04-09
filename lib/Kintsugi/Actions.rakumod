@@ -8,6 +8,18 @@ class Kintsugi::Actions {
     method datatype:sym<integer>($/) {
         $/.make(AST::IntegerValue.new(value => +$/));
     }
+
+    method datatype:sym<float>($/) {
+        $/.make(AST::FloatValue.new(value => +$/));
+    }
+
+    method datatype:sym<logic>($/) {
+        $/.make(AST::LogicValue.new(value => $/ ~~ 'true' | 'on' | 'yes'));
+    }
+
+    method datatype:sym<string>($/) {
+        $/.make(AST::StringValue.new(value => ~$/));
+    }
     
     method TOP($/) {
         my $top = AST::TOP.new;

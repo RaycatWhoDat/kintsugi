@@ -6,6 +6,7 @@ grammar Kintsugi::Standard::Grammar is Kintsugi::Foundation::Grammar {
     token datatype:sym<scope> { <scope> }
     token datatype:sym<operator> { <operator> }
     token datatype:sym<date> { <date> }
+    token datatype:sym<logic> { <logic> }
     
     token scope {
         '@'
@@ -23,5 +24,13 @@ grammar Kintsugi::Standard::Grammar is Kintsugi::Foundation::Grammar {
         | \d ** 4 '-' \d ** 2 '-' \d ** 2
         | \d ** 2 '-' \d ** 2 '-' \d ** 2
         | \d ** 2 '-' \d ** 2 '-' \d ** 4
+    }
+    token logic {
+        | 'true'
+        | 'false'
+        | 'on'
+        | 'off'
+        | 'yes'
+        | 'no'
     }
 }

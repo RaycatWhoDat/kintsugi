@@ -1,3 +1,6 @@
 Kintsugi/Foundation []
 
 number1: 12
+number2: 3.45
+is-logic: true
+is-string: "string"
