@@ -23,10 +23,7 @@ grammar Kintsugi::Foundation::Grammar {
 
     token directive {
         '#'
-        [
-            | 'include'
-            | 'macro'
-        ]
+        < include macro >
     }
     
     token file { '%' <any-safe-file-char>+ }
@@ -39,7 +36,7 @@ grammar Kintsugi::Foundation::Grammar {
     token word { <any-word-char>+ }
 
     token string { '"' ~ '"' <string-contents> }
-    token logic { 'true' | 'false' }
+    token logic { < true false > }
     token float { \d* '.' \d+ }
     token integer { \d+ }
 

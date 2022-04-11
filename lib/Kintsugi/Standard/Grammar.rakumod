@@ -8,13 +8,7 @@ grammar Kintsugi::Standard::Grammar is Kintsugi::Foundation::Grammar {
     token datatype:sym<date> { <date> }
     token datatype:sym<logic> { <logic> }
     
-    token scope {
-        '@'
-        [
-            | 'enter'
-            | 'exit'
-        ]
-    }
+    token scope { '@' < enter exit > }
 
     token mezzanine {
         | '|>'
@@ -25,12 +19,6 @@ grammar Kintsugi::Standard::Grammar is Kintsugi::Foundation::Grammar {
         | \d ** 2 '-' \d ** 2 '-' \d ** 2
         | \d ** 2 '-' \d ** 2 '-' \d ** 4
     }
-    token logic {
-        | 'true'
-        | 'false'
-        | 'on'
-        | 'off'
-        | 'yes'
-        | 'no'
-    }
+    
+    token logic { < true false on off yes no > }
 }
