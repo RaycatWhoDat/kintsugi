@@ -39,7 +39,7 @@ subtest 'simple assignment' => {
 
     for $result.made.items.kv -> $index, $node {
         my $result = $node ~~ @expected[$index];
-        say $node unless $result;
+        print $node unless $result;
         $result.&is(True);
     }
 }

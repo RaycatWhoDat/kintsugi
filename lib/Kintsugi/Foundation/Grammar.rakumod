@@ -18,7 +18,7 @@ grammar Kintsugi::Foundation::Grammar {
     token datatype:sym<none> { <sym> }
     token datatype:sym<float> { <float> }
     token datatype:sym<integer> { <integer> }
-    token datatype:sym<any-word> { <any-word> }
+    token datatype:sym<word> { <word> }
     token datatype:sym<comment> { <comment> }
 
     token directive {
@@ -33,10 +33,10 @@ grammar Kintsugi::Foundation::Grammar {
     token function { 'function' <.ws> <block> <.ws> <block> }
     token operator { <[+\-*/\^=]> }
     
-    token lit-word { '\'' <any-word-char>+ }
-    token get-word { ':' <any-word-char>+ }
-    token set-word { <any-word-char>+ ':' }
-    token any-word { <any-word-char>+ }
+    token lit-word { '\'' <word> }
+    token get-word { ':' <word> }
+    token set-word { <word> ':' }
+    token word { <any-word-char>+ }
 
     token string { '"' ~ '"' <string-contents> }
     token logic { 'true' | 'false' }
