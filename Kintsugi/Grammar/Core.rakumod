@@ -1,5 +1,6 @@
 grammar Kintsugi::Grammar::Core {
-    rule TOP { <header> <block-items> }
+    rule TOP { <preamble>? <header> <block-items> }
+    token preamble { [<.ws> <comment> <.ws>]+ }
 
     rule header { 'Kintsugi/Core' <.ws> <block> }
     
@@ -10,35 +11,44 @@ grammar Kintsugi::Grammar::Core {
     token datatype:sym<block> { <block> }
     token datatype:sym<directive> { <directive> }
     token datatype:sym<file> { <file> }
-    token datatype:sym<function> { <function> }
-    token datatype:sym<operator> { <operator> }
+    token datatype:sym<comment> { <comment> }
     token datatype:sym<lit-word> { <lit-word> }
     token datatype:sym<get-word> { <get-word> }
     token datatype:sym<set-word> { <set-word> }
+    token datatype:sym<word> { <word> }
+    token datatype:sym<function> { <function> }
+    token datatype:sym<operator> { <operator> }
     token datatype:sym<none> { <sym> }
     token datatype:sym<float> { <float> }
     token datatype:sym<integer> { <integer> }
-    token datatype:sym<word> { <word> }
-    token datatype:sym<comment> { <comment> }
+    token datatype:sym<char> { <char> }
+    token datatype:sym<binary> { <binary> }
+    token datatype:sym<paren> { <paren> }
 
     token directive {
         '#'
-        < include macro >
+        < comptime >
     }
     
     token file { '%' <any-safe-file-char>+ }
     token function { 'function' <.ws> <block> <.ws> <block> }
-    token operator { <[+\-*/\^=]> }
+    token operator { <unary-op> | <binary-op> }
+    token unary-op { <[+\-*/\^=\<\>%|]> }
+    token binary-op { '->' }
+    
     
     token lit-word { '\'' <word> }
     token get-word { ':' <word> }
     token set-word { <word> ':' }
     token word { <any-word-char>+ }
 
-    token float { \d* '.' \d+ }
-    token integer { \d+ }
+    token float { '-'? \d* '.' \d+ }
+    token integer { '-'? \d+ }
+    token char { '#"' \w '"' }
+    token binary { '#{' <[0..9 A..F a..f]>+ '}' }
+    rule paren { '(' ~ ')' <block-items> }
 
-    token comment { ';' \V+ }
+    token comment { ';' \N* }
 
     token string-contents { <-["]>* }
     token strictly-word-char { <[\w\-]> }

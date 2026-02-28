@@ -4,8 +4,6 @@ use Kintsugi::Grammar::Systems;
 use Kintsugi::Grammar::Full;
 use Kintsugi::Actions;
 
-# use trace;
-
 role X::Kintsugi {
     has Str $.message;
 
@@ -22,7 +20,8 @@ sub MAIN(IO(Str) $file where *.f) {
     say "=== Kintsugi Interpreter v0.0.1 ===";
 
     say "Entry point: {$file.basename}";
-    my $grammar = do given $file.words.first {
+    my $header-line = $file.lines.first(*.starts-with('Kintsugi'));
+    my $grammar = do given $header-line {
         when / 'Kintsugi/Core' / { Kintsugi::Grammar::Core }
         when / 'Kintsugi/Systems' / { Kintsugi::Grammar::Systems }
         when / 'Kintsugi' '/Full'? / { Kintsugi::Grammar::Full }

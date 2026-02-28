@@ -97,7 +97,6 @@ my-time: 14:30:00                       ; time!
 
 my-string: "Hello, world"              ; string!
 escaped: "Line one^/Line two"          ; ^/ is newline escape
-my-tag: <div class="main">             ; tag!
 my-binary: #{48656C6C6F}               ; binary! (hex encoded)
 
 ; --- Identifiers & Resources ---
@@ -176,7 +175,7 @@ do code                                 ; => 30
 ;   any-word!   = word! | set-word! | get-word! | lit-word!
 ;   any-block!  = block! | paren! | path!
 ;   series!     = string! | block! | file! | url!
-;                 | email! | tag! | binary!
+;                 | email! | binary!
 ;   scalar!     = integer! | float! | date! | time!
 ;                 | money! | pair! | tuple! | char!
 ;   any-type!   = all types
@@ -287,7 +286,6 @@ process: (item ->
   validated: validate cleaned
   store validated
 )
-
 
 ; ============================================================
 ; BLOCKS & HOMOICONICITY
