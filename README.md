@@ -2,6 +2,39 @@
 
 A homoiconic, dynamically-typed programming language with rich built-in datatypes, compile-time evaluation, and extensible DSLs called "dialects". Influenced by REBOL, Red, Ren-C, Common Lisp, D, and Raku.
 
+```rebol
+; Quicksort
+qsort: function [blk] [
+  if (length? blk) <= 1 [return blk]
+  pivot: first blk
+  rest: copy blk
+  remove rest 1
+  lo: filter [x] rest [x < pivot]
+  hi: filter [x] rest [not x < pivot]
+  result: qsort lo
+  append result pivot
+  each [x] qsort hi [append result x]
+  result
+]
+
+unsorted: [3 1 4 1 5 9 2 6 5 3]
+sorted: qsort unsorted
+probe sorted             ; 1 1 2 3 3 4 5 5 6 9
+
+; Fibonacci sequence
+fib: function [n] [
+  seq: [0 1]
+  loop (n - 2) [
+    a: pick seq ((length? seq) - 1)
+    b: last seq
+    append seq (a + b)
+  ]
+  seq
+]
+
+probe fib 10             ; 0 1 1 2 3 5 8 13 21 34
+```
+
 > [!WARNING]
 > Kintsugi is in early development. Things can and will change. Things will break. Use at your own risk.
 
@@ -238,41 +271,6 @@ print even? 8            ; True
 ; Probe — prints and returns (debug pipelines)
 result: probe (6 * 7)    ; prints 42
 print result             ; 42
-
-; ═══════════════════════════════════════════
-; 11. Putting It All Together
-; ═══════════════════════════════════════════
-
-; Quicksort
-qsort: function [blk] [
-  if (length? blk) <= 1 [return blk]
-  pivot: first blk
-  rest: copy blk
-  remove rest 1
-  lo: filter [x] rest [x < pivot]
-  hi: filter [x] rest [not x < pivot]
-  result: qsort lo
-  append result pivot
-  each [x] qsort hi [append result x]
-  result
-]
-
-unsorted: [3 1 4 1 5 9 2 6 5 3]
-sorted: qsort unsorted
-probe sorted             ; 1 1 2 3 3 4 5 5 6 9
-
-; Fibonacci sequence
-fib: function [n] [
-  seq: [0 1]
-  loop (n - 2) [
-    a: pick seq ((length? seq) - 1)
-    b: last seq
-    append seq (a + b)
-  ]
-  seq
-]
-
-probe fib 10             ; 0 1 1 2 3 5 8 13 21 34
 ```
 
 
