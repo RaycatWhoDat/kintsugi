@@ -3,7 +3,7 @@
 A homoiconic, dynamically-typed programming language with rich built-in datatypes, compile-time evaluation, and extensible DSLs called "dialects". Influenced by REBOL, Red, Ren-C, Common Lisp, D, and Raku.
 
 > [!WARNING]
-> Kintsugi is in very early development.
+> Kintsugi is in early development. Things can and will change. Things will break. Use at your own risk.
 
 ```rebol
 Kintsugi/Core []
