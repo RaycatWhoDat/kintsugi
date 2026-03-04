@@ -38,6 +38,31 @@ class Kintsugi::Actions {
         $/.make(AST::TOP.new(header => $<header>.made, items => @items, |self!span($/)));
     }
 
+    # --- Paths ---
+
+    method !path-parts($path) {
+        my $head = ~$path<head>;
+        my @segments = $path<path-segment>.map: -> $seg {
+            $seg<index>.defined ?? +$seg<index> !! ~$seg<key>
+        };
+        ($head, |@segments);
+    }
+
+    method datatype:sym<path>($/) {
+        my ($head, @segments) = self!path-parts($<path>);
+        $/.make(AST::Path.new(:$head, :@segments, |self!span($/)));
+    }
+
+    method datatype:sym<set-path>($/) {
+        my ($head, @segments) = self!path-parts($<set-path><path>);
+        $/.make(AST::SetPath.new(:$head, :@segments, |self!span($/)));
+    }
+
+    method datatype:sym<get-path>($/) {
+        my ($head, @segments) = self!path-parts($<get-path><path>);
+        $/.make(AST::GetPath.new(:$head, :@segments, |self!span($/)));
+    }
+
     # --- Words ---
 
     method datatype:sym<word>($/) {

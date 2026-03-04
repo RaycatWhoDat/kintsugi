@@ -1,6 +1,0 @@
-Kintsugi []
-
-test-case1: 123
-test-case2: 456
-
-print test-case1 + test-case2

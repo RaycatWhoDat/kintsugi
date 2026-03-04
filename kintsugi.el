@@ -41,14 +41,18 @@
   "Syntax propertize rules for char literals.")
 
 (defconst kintsugi-font-lock-keywords
-  (let ((control '("if" "either" "unless" "while" "repeat" "forever"
-                    "break" "function" "do" "try" "error" "match"
-                    "loop" "parse" "attempt" "require" "object"
-                    "use" "bind"))
-        (builtins '("compose" "select" "first" "second" "third"
-                     "append" "length?" "type?" "typeset" "emit"
-                     "open" "close" "read" "write" "print"
-                     "to" "is?" "parse")))
+  (let ((control '("if" "either" "while" "until" "loop"
+                    "break" "return" "function" "do" "try"
+                    "each" "map" "filter" "reduce"
+                    "not" "and" "or"))
+        (builtins '("print" "probe" "compose" "apply" "stub" "quit"
+                     "select" "first" "last" "pick" "append"
+                     "insert" "remove" "copy" "reverse"
+                     "length?" "empty?" "type?"
+                     "none?" "integer?" "float?" "logic?"
+                     "char?" "block?" "function?" "string?"
+                     "min" "max" "abs" "negate" "odd?" "even?"
+                     "form" "join" "reform" "rejoin")))
     `(
       ;; Directives
       ("#comptime" . font-lock-preprocessor-face)

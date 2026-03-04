@@ -1,7 +1,0 @@
-Kintsugi [
-  author: "Ray Perry"
-  permissions: ['system 'network 'file]
-  modules: ['view 'api]
-]
-
-variable1: 2

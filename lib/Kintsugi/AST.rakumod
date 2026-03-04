@@ -1,5 +1,10 @@
-role Span { has Int $.from; has Int $.to; }
 role Value[::T] { has T $.value; }
+
+role Span {
+    has Int $.from;
+    has Int $.to;
+    method type-name() { "{self.^name.substr(5).comb(/<[A..Z]> <[a..z]>*/).map(*.lc).join('-')}!"  }
+}
 
 class AST::Block does Span {
     has @.items = [];
@@ -59,6 +64,23 @@ class AST::SetWord does Span does Value[Str] {}
 class AST::GetWord does Span does Value[Str] {}
 class AST::LitWord does Span does Value[Str] {}
 class AST::Operator does Span does Value[Str] {}
+
+# --- Paths ---
+
+class AST::Path does Span {
+    has Str $.head;
+    has @.segments;
+}
+
+class AST::SetPath does Span {
+    has Str $.head;
+    has @.segments;
+}
+
+class AST::GetPath does Span {
+    has Str $.head;
+    has @.segments;
+}
 
 # --- Directives ---
 

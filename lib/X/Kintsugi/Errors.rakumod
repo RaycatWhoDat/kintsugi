@@ -10,3 +10,6 @@ class X::Kintsugi::UndefinedWord is X::Kintsugi {}
 class X::Kintsugi::ArityError is X::Kintsugi {}
 class X::Kintsugi::TypeError is X::Kintsugi {}
 class X::Kintsugi::DuplicateParam is X::Kintsugi {}
+class X::Kintsugi::NotImplemented is X::Kintsugi {}
+class X::Kintsugi::Break is Exception { has $.value; method gist { $!value.Str } }
+class X::Kintsugi::Return is Exception { has $.value; method gist { $!value.Str } }
