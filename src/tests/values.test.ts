@@ -128,7 +128,7 @@ describe('astToValue', () => {
 
   test('operator', () => {
     const val = convert('+');
-    expect(val).toEqual({ type: 'operator!', symbol: '+' });
+    expect(val).toEqual({ type: 'op!', symbol: '+' });
   });
 
   test('block (inert)', () => {

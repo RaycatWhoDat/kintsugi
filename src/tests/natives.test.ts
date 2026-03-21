@@ -157,10 +157,10 @@ describe('block operations', () => {
 });
 
 describe('type operations', () => {
-  test('type?', () => {
-    expect(eval_('type? 42')).toEqual({ type: 'type!', name: 'integer!' });
-    expect(eval_('type? "hi"')).toEqual({ type: 'type!', name: 'string!' });
-    expect(eval_('type? true')).toEqual({ type: 'type!', name: 'logic!' });
+  test('type', () => {
+    expect(eval_('type 42')).toEqual({ type: 'type!', name: 'integer!' });
+    expect(eval_('type "hi"')).toEqual({ type: 'type!', name: 'string!' });
+    expect(eval_('type true')).toEqual({ type: 'type!', name: 'logic!' });
   });
 });
 

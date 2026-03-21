@@ -80,6 +80,14 @@ my-block: [1 2 "three" 4.0]            ; block! (the universal container)
 nested: [[1 2] [3 4] [5 6]]            ; blocks nest freely
 code-as-data: [print "I am data"]      ; code is just a block
 my-paren: (1 + 2)                       ; paren! evaluates immediately: 3
+my-map: make map! [name: "Ray" age: 30] ; map! (key-value store)
+
+; --- Internal types ---
+; These are not constructed directly in user code, but
+; are returned by type and used internally:
+;   native!    — built-in function
+;   op!        — operator (infix symbol or infix function)
+;   type!      — type name value (integer!, string!, etc.)
 
 
 ; ============================================================
@@ -152,6 +160,17 @@ print round/down 10 / 3                 ; 3 (truncate toward zero)
 print round 3.7                         ; 4 (nearest)
 print round/up 3.2                      ; 4 (away from zero)
 
+; --- Date arithmetic ---
+print 2026-03-15 + 10                   ; 2026-03-25 (add days)
+print 2026-03-15 - 5                    ; 2026-03-10 (subtract days)
+print 2026-03-20 - 2026-03-15          ; 5 (difference in days)
+
+; --- Time arithmetic ---
+print 14:30:00 + 01:15:00              ; 15:45:00 (add times)
+print 14:30:00 - 01:15:00              ; 13:15:00 (subtract times)
+print 14:30:00 + 3600                   ; 15:30:00 (add seconds)
+print 14:30:00 - 1800                   ; 14:00:00 (subtract seconds)
+
 ; --- Comparisons ---
 
 print 5 > 3                             ; true
@@ -160,6 +179,8 @@ print 5 = 5                             ; true
 print 5 <> 3                            ; true
 print 5 >= 5                            ; true
 print 3 <= 5                            ; true
+print 2026-03-20 > 2026-03-15          ; true (dates compare)
+print 14:30:00 < 15:00:00              ; true (times compare)
 
 ; --- Logic ---
 ; and/or are infix, short-circuit, and return the determining
@@ -408,15 +429,33 @@ print length? m                         ; number of key-value pairs
 ; A future compiler can trust these annotations for optimization.
 
 ; --- Introspection ---
-type? 42                                ; => integer!
-type? "hello"                           ; => string!
-type? [1 2 3]                           ; => block!
+type 42                                ; => integer!
+type "hello"                           ; => string!
+type [1 2 3]                           ; => block!
 
 ; --- Type predicates ---
+; Every type has a predicate (name?), generated from the type name.
 integer? 42                             ; => true
+float? 3.14                            ; => true
 string? "hello"                         ; => true
+logic? true                            ; => true
 none? none                              ; => true
+block? [1 2 3]                         ; => true
+pair? 100x200                          ; => true
+tuple? 1.2.3                           ; => true
+date? 2026-03-15                       ; => true
+time? 14:30:00                         ; => true
+file? %path/to/file                    ; => true
+url? https://example.com               ; => true
+email? user@example.com                ; => true
+word? 'hello                           ; => true
+meta-word? @enter                      ; => true
+map? make map! [a: 1]                  ; => true
 function? :add                          ; => true
+; Union predicates work too:
+number? 3.14                           ; => true (integer! or float!)
+any-word? 'hello                       ; => true
+scalar? 100x200                        ; => true
 
 ; --- Type checking (is?) ---
 ; is? checks whether a value matches a type. Works with
@@ -425,8 +464,6 @@ is? integer! 42                         ; => true
 is? string! 42                          ; => false
 
 ; --- Type conversion (to) ---
-; to converts between scalar types. It does not apply to
-; composite or structural types — those are checked, not converted.
 to integer! "42"                        ; => 42
 to string! 42                           ; => "42"
 to float! 7                             ; => 7.0
@@ -435,14 +472,24 @@ to word! "hello"                        ; => word
 to set-word! "x"                        ; => set-word
 to lit-word! "name"                     ; => lit-word
 to meta-word! "add"                     ; => meta-word
-codepoint "A"                           ; => 65
-from-codepoint 65                       ; => "A"
 to integer! true                        ; => 1
 to float! false                         ; => 0.0
+to date! "2026-03-15"                   ; => 2026-03-15
+to time! "14:30:00"                     ; => 14:30:00
+to pair! "100x200"                      ; => 100x200
+to pair! [10 20]                        ; => 10x20
+to tuple! "1.2.3"                       ; => 1.2.3
+to file! "path/to/file"                ; => %path/to/file
+to url! "https://example.com"          ; => https://example.com
+to email! "user@example.com"           ; => user@example.com
+to map! [a: 1 b: 2]                    ; => map with a=1, b=2
+codepoint "A"                           ; => 65
+from-codepoint 65                       ; => "A"
 
 ; --- Built-in type unions ---
 ; number!     = integer! | float!
 ; any-word!   = word! | set-word! | get-word! | lit-word! | meta-word!
+; any-block!  = block! | paren! | path!
 ; scalar!     = integer! | float! | date! | time! | pair! | tuple!
 ; any-type!   = matches any type
 

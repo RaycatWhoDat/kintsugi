@@ -21,7 +21,7 @@ const BUILTINS: Record<string, number> = {
   'length?': 1, 'empty?': 1, 'first': 1, 'second': 1, 'last': 1,
   'pick': 2, 'copy': 1, 'append': 2, 'insert': 3, 'remove': 2,
   'select': 2, 'has?': 2, 'index?': 2,
-  'type?': 1, 'to': 2, 'make': 2,
+  'type': 1, 'to': 2, 'make': 2,
   'join': 2, 'rejoin': 1, 'trim': 1, 'split': 2,
   'uppercase': 1, 'lowercase': 1, 'replace': 3,
   'min': 2, 'max': 2, 'abs': 1, 'negate': 1, 'round': 1,
@@ -271,7 +271,7 @@ function lowerExpr(values: KtgValue[], pos: number, scope: Scope): [IRExpr, numb
   // Infix continuation — left to right, no precedence
   while (nextPos < values.length) {
     const next = values[nextPos];
-    if (next.type === 'operator!' && INFIX_OPS.has(next.symbol)) {
+    if (next.type === 'op!' && INFIX_OPS.has(next.symbol)) {
       const op = next.symbol as IRBinOp['op'];
       const [right, afterRight] = lowerAtom(values, nextPos + 1, scope);
       const resultType = inferBinopType(op, expr.type, right.type);
@@ -401,7 +401,7 @@ function lowerAtom(values: KtgValue[], pos: number, scope: Scope): [IRExpr, numb
       if (pos + 1 < values.length) {
         const next = values[pos + 1];
         const isArg = next && next.type !== 'set-word!' && next.type !== 'set-path!'
-          && !(next.type === 'operator!' && INFIX_OPS.has((next as any).symbol))
+          && !(next.type === 'op!' && INFIX_OPS.has((next as any).symbol))
           && !(next.type === 'word!' && INFIX_WORDS.has((next as any).name));
 
         if (isArg && next.type !== 'block!') {
@@ -642,7 +642,7 @@ function parseSpecBlock(spec: KtgBlock): { params: IRParam[]; returnType: IRType
     }
 
     // /refinement
-    if (v.type === 'operator!' && (v as any).symbol === '/' && i + 1 < values.length && values[i + 1].type === 'word!') {
+    if (v.type === 'op!' && (v as any).symbol === '/' && i + 1 < values.length && values[i + 1].type === 'word!') {
       i++;
       const refName = (values[i] as any).name;
       // TODO: parse refinement params
@@ -1182,7 +1182,7 @@ function buildPatternMatch(matchValue: IRExpr, pattern: KtgBlock, scope: Scope):
   if (pv.length === 1 && pv[0].type === 'word!' && (pv[0] as any).name.endsWith('!')) {
     return {
       condition: { tag: 'binop', type: 'logic!', op: '=',
-        left: { tag: 'builtin', type: 'string!', name: 'type?', args: [matchValue] },
+        left: { tag: 'builtin', type: 'string!', name: 'type', args: [matchValue] },
         right: { tag: 'literal', type: 'string!', value: (pv[0] as any).name },
       },
       bindings: [],
@@ -1220,7 +1220,7 @@ function buildPatternMatch(matchValue: IRExpr, pattern: KtgBlock, scope: Scope):
     if (p.type === 'word!' && (p as any).name.endsWith('!')) {
       // Type match at position
       conditions.push({ tag: 'binop', type: 'logic!', op: '=',
-        left: { tag: 'builtin', type: 'string!', name: 'type?', args: [elemAccess] },
+        left: { tag: 'builtin', type: 'string!', name: 'type', args: [elemAccess] },
         right: { tag: 'literal', type: 'string!', value: (p as any).name },
       });
       continue;

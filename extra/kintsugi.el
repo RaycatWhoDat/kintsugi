@@ -35,9 +35,6 @@
     st)
   "Syntax table for `kintsugi-mode'.")
 
-(defconst kintsugi--syntax-propertize
-  (syntax-propertize-rules)
-  "Syntax propertize rules.")
 
 (defconst kintsugi-font-lock-keywords
   (let ((control '("if" "either" "unless" "loop" "break" "return"
@@ -46,12 +43,12 @@
                     ;; Loop dialect keywords
                     "for" "in" "from" "to" "by" "when"
                     ;; Attempt/match dialect keywords
-                    "source" "then" "fallback" "retries" "default" "on"))
+                    "source" "then" "fallback" "retries" "default"))
         (builtins '("print" "probe" "compose" "reduce" "apply"
                      "select" "first" "second" "last" "pick"
                      "append" "insert" "remove" "copy"
                      "has?" "index?"
-                     "length?" "empty?" "type?"
+                     "length?" "empty?" "type"
                      "none?" "integer?" "float?" "logic?"
                      "block?" "function?" "string?"
                      "context?" "pair?" "tuple?" "date?" "time?"
@@ -70,8 +67,12 @@
       ("#\\(?:preprocess\\|inline\\)" . font-lock-preprocessor-face)
       ;; Inline preprocess #[expr]
       ("#\\[" . font-lock-preprocessor-face)
-      ;; Meta-words (@enter, @exit, etc.)
-      ("@[[:alpha:]][[:alnum:]_?!-]*" . font-lock-preprocessor-face)
+      ;; Lifecycle hooks
+      ("@\\(?:enter\\|exit\\)\\b" . font-lock-preprocessor-face)
+      ;; Char literals #"x"
+      ("#\".\""  . font-lock-constant-face)
+      ;; Binary literals #{...}
+      ("#{[^}]*}" . font-lock-constant-face)
       ;; URL literals (before email and file to avoid partial matches)
       ("[[:alpha:]][[:alnum:]+-]*://[^] \t\n[()]*" . font-lock-string-face)
       ;; Email literals
@@ -87,6 +88,8 @@
       ("\\_<[[:alpha:]][[:alnum:]_?!-]*:" . font-lock-variable-name-face)
       ;; Type names (word!)
       ("\\_<[[:alpha:]][[:alnum:]_-]*!" . font-lock-type-face)
+      ;; Shape names (word~)
+      ("\\_<[[:alpha:]][[:alnum:]_-]*~" . font-lock-type-face)
       ;; Lit-words ('word)
       ("'[[:alpha:]][[:alnum:]_?!-]*" . font-lock-constant-face)
       ;; Get-words (:word)
@@ -121,8 +124,7 @@
   (setq-local comment-start "; ")
   (setq-local comment-end "")
   (setq-local font-lock-defaults '(kintsugi-font-lock-keywords))
-  (setq-local indent-line-function #'kintsugi-indent-line)
-  (setq-local syntax-propertize-function kintsugi--syntax-propertize))
+  (setq-local indent-line-function #'kintsugi-indent-line))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.ktg\\'" . kintsugi-mode))

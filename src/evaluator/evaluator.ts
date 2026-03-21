@@ -2,11 +2,12 @@ import { KtgContext } from './context';
 import {
   KtgValue, KtgBlock, KtgOp, KtgFunction, KtgNative,
   NONE, KtgError, BreakSignal, ReturnSignal,
-  astToValue, isCallable, isTruthy, numVal, isNumeric,
+  astToValue, isCallable, numVal, isNumeric,
   valueToString,
 } from './values';
 import { parseString } from '@/helpers';
 import { registerNatives } from './natives';
+import { checkType } from './type-check';
 
 export class Evaluator {
   public global: KtgContext;
@@ -189,7 +190,7 @@ export class Evaluator {
         return [val, pos + 1];
       }
 
-      case 'operator!':
+      case 'op!':
         // Operators should be consumed by infix handling, not appear here
         throw new KtgError('syntax', `Unexpected operator: ${val.symbol}`);
 
@@ -239,7 +240,7 @@ export class Evaluator {
   nextIsInfix(values: KtgValue[], pos: number, ctx: KtgContext): boolean {
     if (pos >= values.length) return false;
     const val = values[pos];
-    if (val.type === 'operator!') return true;
+    if (val.type === 'op!') return true;
     if (val.type === 'word!') {
       const bound = ctx.get(val.name);
       return bound !== undefined && bound.type === 'op!';
@@ -251,7 +252,7 @@ export class Evaluator {
     const opVal = values[pos];
     let opFn: (l: KtgValue, r: KtgValue) => KtgValue;
 
-    if (opVal.type === 'operator!') {
+    if (opVal.type === 'op!') {
       const op = this.getBuiltinOp(opVal.symbol);
       opFn = op;
     } else if (opVal.type === 'word!') {
@@ -274,9 +275,18 @@ export class Evaluator {
       case '+': return (l, r) => {
         if (l.type === 'string!' && r.type === 'string!') return { type: 'string!', value: l.value + r.value };
         if (l.type === 'string!') return { type: 'string!', value: l.value + valueToString(r) };
+        if (l.type === 'date!' && r.type === 'integer!') return { type: 'date!', value: addDays(l.value, r.value) };
+        if (l.type === 'time!' && r.type === 'time!') return { type: 'time!', value: addTimes(l.value, r.value) };
+        if (l.type === 'time!' && r.type === 'integer!') return { type: 'time!', value: addSeconds(l.value, r.value) };
         return { type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) + numVal(r) };
       };
-      case '-': return (l, r) => ({ type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) - numVal(r) });
+      case '-': return (l, r) => {
+        if (l.type === 'date!' && r.type === 'integer!') return { type: 'date!', value: addDays(l.value, -r.value) };
+        if (l.type === 'date!' && r.type === 'date!') return { type: 'integer!', value: diffDays(l.value, r.value) };
+        if (l.type === 'time!' && r.type === 'time!') return { type: 'time!', value: subtractTimes(l.value, r.value) };
+        if (l.type === 'time!' && r.type === 'integer!') return { type: 'time!', value: addSeconds(l.value, -r.value) };
+        return { type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) - numVal(r) };
+      };
       case '*': return (l, r) => ({ type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) * numVal(r) });
       case '/': return (l, r) => {
         const rv = numVal(r);
@@ -491,68 +501,6 @@ function extractLifecycleHooks(values: KtgValue[]): {
 
 // --- Helpers ---
 
-// --- Type checking ---
-
-const TYPESETS: Record<string, string[]> = {
-  'number!': ['integer!', 'float!'],
-  'any-word!': ['word!', 'set-word!', 'get-word!', 'lit-word!', 'meta-word!'],
-  'any-block!': ['block!', 'paren!', 'path!'],
-  'scalar!': ['integer!', 'float!', 'date!', 'time!', 'pair!', 'tuple!'],
-  'any-type!': [], // matches everything
-};
-
-function checkType(value: KtgValue, constraint: string, paramName: string, ctx?: KtgContext, evaluator?: Evaluator, elementType?: string): void {
-  if (constraint === 'any-type!') return;
-
-  // Check built-in type unions (number!, any-word!, etc.)
-  const builtinUnion = TYPESETS[constraint];
-  if (builtinUnion) {
-    if (!builtinUnion.includes(value.type)) {
-      throw new KtgError('type', `${paramName} expects ${constraint}, got ${value.type}`);
-    }
-    return;
-  }
-
-  // Check user-defined types (@type) from context
-  if (ctx) {
-    const resolved = ctx.get(constraint);
-    if (resolved && resolved.type === 'type!' && resolved.rule && evaluator) {
-      const { parseBlock } = require('./parse');
-      const input = value.type === 'block!'
-        ? value
-        : { type: 'block!' as const, values: [value] };
-      if (!parseBlock(input as any, resolved.rule, ctx, evaluator)) {
-        throw new KtgError('type', `${paramName} expects ${constraint}, got ${value.type}`);
-      }
-      // Check where clause if present
-      if (resolved.guard) {
-        const guardCtx = new KtgContext(ctx);
-        guardCtx.set('it', value);
-        const guardResult = evaluator.evalBlock(resolved.guard, guardCtx);
-        if (!isTruthy(guardResult)) {
-          throw new KtgError('type', `${paramName} fails where clause for ${constraint}`);
-        }
-      }
-      return;
-    }
-  }
-
-  // For function?, match both function! and native!
-  if (constraint === 'function!' && (value.type === 'function!' || value.type === 'native!')) return;
-
-  if (value.type !== constraint) {
-    throw new KtgError('type', `${paramName} expects ${constraint}, got ${value.type}`);
-  }
-
-  // Check element type for typed blocks
-  if (elementType && value.type === 'block!' && value.values) {
-    for (const elem of value.values) {
-      if (elem.type !== elementType) {
-        throw new KtgError('type', `${paramName} expects ${constraint} of ${elementType}, got ${elem.type} element`);
-      }
-    }
-  }
-}
 
 function isInt(l: KtgValue, r: KtgValue): boolean {
   return l.type === 'integer!' && r.type === 'integer!';
@@ -566,11 +514,56 @@ function valuesEqual(a: KtgValue, b: KtgValue): boolean {
   if (a.type === 'word!' && b.type === 'word!') return a.name === b.name;
   if (a.type === 'lit-word!' && b.type === 'lit-word!') return a.name === b.name;
   if (a.type === 'meta-word!' && b.type === 'meta-word!') return a.name === b.name;
+  if (a.type === 'date!' && b.type === 'date!') return a.value === b.value;
+  if (a.type === 'time!' && b.type === 'time!') return a.value === b.value;
   return false;
 }
 
 function compareValues(a: KtgValue, b: KtgValue): number {
   if (isNumeric(a) && isNumeric(b)) return numVal(a) - numVal(b);
   if (a.type === 'string!' && b.type === 'string!') return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
+  if (a.type === 'date!' && b.type === 'date!') return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
+  if (a.type === 'time!' && b.type === 'time!') return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
   throw new KtgError('type', `Cannot compare ${a.type} and ${b.type}`);
+}
+
+// --- Date/time helpers ---
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function diffDays(a: string, b: string): number {
+  const da = new Date(a + 'T00:00:00Z').getTime();
+  const db = new Date(b + 'T00:00:00Z').getTime();
+  return Math.round((da - db) / 86400000);
+}
+
+function timeToSeconds(t: string): number {
+  const [h, m, s] = t.split(':').map(Number);
+  return h * 3600 + m * 60 + s;
+}
+
+function secondsToTime(total: number): string {
+  const neg = total < 0;
+  if (neg) total = -total;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const str = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return neg ? `-${str}` : str;
+}
+
+function addTimes(a: string, b: string): string {
+  return secondsToTime(timeToSeconds(a) + timeToSeconds(b));
+}
+
+function subtractTimes(a: string, b: string): string {
+  return secondsToTime(timeToSeconds(a) - timeToSeconds(b));
+}
+
+function addSeconds(timeStr: string, secs: number): string {
+  return secondsToTime(timeToSeconds(timeStr) + secs);
 }

@@ -6,6 +6,7 @@ import {
   KtgError, BreakSignal, ReturnSignal,
 } from './values';
 import type { Evaluator } from './evaluator';
+import { matchesType } from './type-check';
 
 export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
   const native = (
@@ -275,7 +276,7 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
 
   // === Group E: Type Operations ===
 
-  native('type?', 1, (args) => {
+  native('type', 1, (args) => {
     return { type: 'type!', name: typeOf(args[0]) };
   });
 
@@ -327,6 +328,56 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
         if (value.type === 'string!') return { type: 'block!', values: [value] };
         if (value.type === 'block!') return value;
         return { type: 'block!', values: [value] };
+      case 'date!':
+        if (value.type === 'string!') {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(value.value)) break;
+          return { type: 'date!', value: value.value };
+        }
+        break;
+      case 'time!':
+        if (value.type === 'string!') {
+          if (!/^\d{2}:\d{2}:\d{2}$/.test(value.value)) break;
+          return { type: 'time!', value: value.value };
+        }
+        break;
+      case 'pair!':
+        if (value.type === 'string!') {
+          const pm = value.value.match(/^(-?\d+)x(-?\d+)$/);
+          if (!pm) break;
+          return { type: 'pair!', x: parseInt(pm[1], 10), y: parseInt(pm[2], 10) };
+        }
+        if (value.type === 'block!' && value.values.length === 2 && isNumeric(value.values[0]) && isNumeric(value.values[1])) {
+          return { type: 'pair!', x: Math.trunc(numVal(value.values[0])), y: Math.trunc(numVal(value.values[1])) };
+        }
+        break;
+      case 'tuple!':
+        if (value.type === 'string!') {
+          const tparts = value.value.split('.');
+          if (tparts.length < 2 || tparts.some(p => !/^\d+$/.test(p))) break;
+          return { type: 'tuple!', parts: tparts.map(Number) };
+        }
+        break;
+      case 'file!':
+        if (value.type === 'string!') return { type: 'file!', value: value.value };
+        break;
+      case 'url!':
+        if (value.type === 'string!') return { type: 'url!', value: value.value };
+        break;
+      case 'email!':
+        if (value.type === 'string!') return { type: 'email!', value: value.value };
+        break;
+      case 'map!':
+        if (value.type === 'block!') {
+          const entries = new Map<string, KtgValue>();
+          for (let i = 0; i < value.values.length - 1; i += 2) {
+            const key = value.values[i];
+            const val = value.values[i + 1];
+            const keyStr = key.type === 'set-word!' ? key.name : valueToString(key);
+            entries.set(keyStr, val);
+          }
+          return { type: 'map!', entries };
+        }
+        break;
     }
     throw new KtgError('type', `Cannot convert ${value.type} to ${typeName}`);
   });
@@ -745,7 +796,8 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
     'pair!', 'tuple!', 'date!', 'time!', 'file!',
     'url!', 'email!', 'word!', 'set-word!', 'get-word!', 'lit-word!', 'meta-word!',
     'path!', 'block!', 'paren!', 'map!', 'context!', 'function!',
-    'native!', 'op!', 'type!', 'any-type!',
+    'native!', 'op!', 'type!',
+    'any-type!', 'number!', 'any-word!', 'any-block!', 'scalar!',
   ];
 
   for (const name of typeNames) {
@@ -759,24 +811,11 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
   ctx.set('no', FALSE);
 
   // === Type Predicates ===
+  // Generated from typeNames: integer! -> integer?, etc.
 
-  native('function?', 1, (args) => ({
-    type: 'logic!',
-    value: args[0].type === 'function!' || args[0].type === 'native!',
-  }));
-
-  const typePredicates: [string, string][] = [
-    ['none?', 'none!'], ['integer?', 'integer!'], ['float?', 'float!'],
-    ['string?', 'string!'], ['logic?', 'logic!'],
-    ['block?', 'block!'], ['context?', 'context!'],
-    ['pair?', 'pair!'], ['tuple?', 'tuple!'], ['date?', 'date!'],
-    ['time?', 'time!'], ['file?', 'file!'],
-    ['url?', 'url!'], ['email?', 'email!'], ['word?', 'word!'],
-    ['meta-word?', 'meta-word!'], ['map?', 'map!'],
-  ];
-
-  for (const [name, typeName] of typePredicates) {
-    native(name, 1, (args) => ({ type: 'logic!', value: args[0].type === typeName }));
+  for (const tn of typeNames) {
+    const predName = tn.replace('!', '?');
+    native(predName, 1, (args) => ({ type: 'logic!', value: matchesType(args[0], tn) }));
   }
 }
 
@@ -890,30 +929,6 @@ function tryMatchPattern(
   return bindings;
 }
 
-function matchesType(value: KtgValue, typeName: string, ctx: KtgContext, ev?: Evaluator): boolean {
-  // Direct type match
-  if (typeName === 'any-type!') return true;
-  if (value.type === typeName) return true;
-  // function! matches native! too
-  if (typeName === 'function!' && value.type === 'native!') return true;
-  // Built-in type unions
-  const builtinSets: Record<string, string[]> = {
-    'number!': ['integer!', 'float!'],
-    'any-word!': ['word!', 'set-word!', 'get-word!', 'lit-word!', 'meta-word!'],
-    'scalar!': ['integer!', 'float!', 'date!', 'time!', 'pair!', 'tuple!'],
-  };
-  if (builtinSets[typeName]) return builtinSets[typeName].includes(value.type);
-  // User-defined types (@type) from context
-  const resolved = ctx.get(typeName);
-  if (resolved && resolved.type === 'type!' && resolved.rule && ev) {
-    const { parseBlock } = require('./parse');
-    const input = value.type === 'block!'
-      ? value
-      : { type: 'block!' as const, values: [value] };
-    return parseBlock(input as any, resolved.rule, ctx, ev);
-  }
-  return false;
-}
 
 function matchValuesEqual(a: KtgValue, b: KtgValue): boolean {
   if (a.type === 'none!' && b.type === 'none!') return true;

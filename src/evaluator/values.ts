@@ -67,9 +67,9 @@ export type NativeFn = (args: KtgValue[], evaluator: any, callerCtx: any, refine
 export type KtgFunction = { type: 'function!'; spec: FuncSpec; body: KtgBlock; closure: KtgContext };
 export type KtgNative   = { type: 'native!';   name: string; arity: number; refinementArgs?: Record<string, number>; fn: NativeFn };
 export type KtgOp       = { type: 'op!';       name: string; fn: (l: KtgValue, r: KtgValue) => KtgValue };
+export type KtgOpSymbol = { type: 'op!';       symbol: string };
 
 export type KtgTypeName = { type: 'type!';     name: string; rule?: KtgBlock; guard?: KtgBlock };
-export type KtgOperator = { type: 'operator!'; symbol: string };
 
 export type KtgValue =
   | KtgInteger | KtgFloat | KtgString | KtgLogic | KtgNone
@@ -78,8 +78,8 @@ export type KtgValue =
   | KtgWord | KtgSetWord | KtgGetWord | KtgLitWord | KtgMetaWord
   | KtgPath | KtgSetPath | KtgGetPath | KtgLitPath
   | KtgBlock | KtgParen | KtgMap | KtgCtxValue
-  | KtgFunction | KtgNative | KtgOp
-  | KtgTypeName | KtgOperator;
+  | KtgFunction | KtgNative | KtgOp | KtgOpSymbol
+  | KtgTypeName;
 
 // --- Constants ---
 
@@ -128,7 +128,7 @@ export function astToValue(node: AstNode): KtgValue {
     case TOKEN_TYPES.SET_PATH: return { type: 'set-path!', segments: v.split('/') };
     case TOKEN_TYPES.GET_PATH: return { type: 'get-path!', segments: v.split('/') };
     case TOKEN_TYPES.LIT_PATH: return { type: 'lit-path!', segments: v.split('/') };
-    case TOKEN_TYPES.OPERATOR: return { type: 'operator!', symbol: v };
+    case TOKEN_TYPES.OPERATOR: return { type: 'op!', symbol: v };
     case TOKEN_TYPES.FUNCTION: return { type: 'word!', name: 'function' };
     case TOKEN_TYPES.DIRECTIVE: return { type: 'word!', name: `#${v}` };
     case TOKEN_TYPES.META_WORD: return { type: 'meta-word!', name: v };
@@ -188,7 +188,7 @@ export function valueToString(val: KtgValue): string {
     case 'native!':    return `native!:${val.name}`;
     case 'op!':        return `op!:${val.name}`;
     case 'type!':      return val.name;
-    case 'operator!':  return val.symbol;
+    case 'op!':        return 'symbol' in val ? val.symbol : val.name;
   }
 }
 

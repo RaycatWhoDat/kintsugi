@@ -28,9 +28,9 @@ describe('context', () => {
     expect(ev.evalString('p/y')).toEqual({ type: 'integer!', value: 10 });
   });
 
-  test('type? returns context!', () => {
+  test('type returns context!', () => {
     const ev = new Evaluator();
     ev.evalString('p: context [x: 1]');
-    expect(ev.evalString('type? p')).toEqual({ type: 'type!', name: 'context!' });
+    expect(ev.evalString('type p')).toEqual({ type: 'type!', name: 'context!' });
   });
 });

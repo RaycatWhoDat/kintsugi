@@ -4,31 +4,9 @@ import {
   NONE, isTruthy, KtgError,
 } from './values';
 import type { Evaluator } from './evaluator';
+import { TYPE_NAMES, matchesType } from './type-check';
 
 class ParseBreak {}
-
-const TYPE_NAMES = new Set([
-  'integer!', 'float!', 'string!', 'logic!', 'none!',
-  'pair!', 'tuple!', 'date!', 'time!', 'file!',
-  'url!', 'email!', 'word!', 'set-word!', 'get-word!', 'lit-word!', 'meta-word!',
-  'path!', 'block!', 'paren!', 'map!', 'context!', 'function!',
-  'native!', 'op!', 'type!', 'operator!',
-  'any-type!', 'number!', 'any-word!', 'scalar!',
-]);
-
-const TYPE_UNIONS: Record<string, string[]> = {
-  'number!': ['integer!', 'float!'],
-  'any-word!': ['word!', 'set-word!', 'get-word!', 'lit-word!', 'meta-word!'],
-  'scalar!': ['integer!', 'float!', 'date!', 'time!', 'pair!', 'tuple!'],
-};
-
-function typeMatches(value: KtgValue, typeName: string): boolean {
-  if (typeName === 'any-type!') return true;
-  if (value.type === typeName) return true;
-  if (typeName === 'function!' && value.type === 'native!') return true;
-  const union = TYPE_UNIONS[typeName];
-  return union ? union.includes(value.type) : false;
-}
 
 const CHAR_CLASSES: Record<string, (ch: string) => boolean> = {
   'alpha': (ch) => /^[a-zA-Z]$/.test(ch),
@@ -381,7 +359,7 @@ function matchOneRule(
         // Block mode: type match (word ending in !)
         if (input.mode === 'block' && name.endsWith('!') && TYPE_NAMES.has(name)) {
           if (iPos >= len) return null;
-          return typeMatches(input.values[iPos], name) ? [iPos + 1, rPos + 1] : null;
+          return matchesType(input.values[iPos], name) ? [iPos + 1, rPos + 1] : null;
         }
 
         // Composable rule: look up word in context
@@ -427,7 +405,7 @@ function splitOnPipe(rules: KtgValue[]): KtgValue[][] {
   const alternatives: KtgValue[][] = [];
   let current: KtgValue[] = [];
   for (const rule of rules) {
-    if (rule.type === 'operator!' && (rule as any).symbol === '|') {
+    if (rule.type === 'op!' && (rule as any).symbol === '|') {
       alternatives.push(current);
       current = [];
     } else {

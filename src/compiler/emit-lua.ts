@@ -447,7 +447,7 @@ function emitBuiltin(expr: IRBuiltinCall): string {
     case 'odd?': return `(${args[0]} % 2 ~= 0)`;
     case 'even?': return `(${args[0]} % 2 == 0)`;
     case 'not': return `not ${args[0]}`;
-    case 'type?': return `__type_of(${args[0]})`;
+    case 'type': return `__type_of(${args[0]})`;
     case 'words-of': return `__words_of(${args[0]})`;
     case 'apply': return `__apply(${args[0]}, ${args[1]})`;
     case 'set': return `__set(${args[0]}, ${args[1]})`;

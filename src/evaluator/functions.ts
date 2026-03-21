@@ -27,7 +27,7 @@ export function parseSpec(specBlock: KtgBlock): FuncSpec {
     }
 
     // Refinement: operator "/" followed by a word
-    if (v.type === 'operator!' && (v as any).symbol === '/' && i + 1 < values.length && values[i + 1].type === 'word!') {
+    if (v.type === 'op!' && (v as any).symbol === '/' && i + 1 < values.length && values[i + 1].type === 'word!') {
       i++;
       const refName = (values[i] as any).name;
       currentRefinement = { name: refName, params: [] };
