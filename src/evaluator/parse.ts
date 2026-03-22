@@ -8,6 +8,8 @@ import { TYPE_NAMES, matchesType } from './type-check';
 
 class ParseBreak {}
 
+let caseSensitiveLitWords = false;
+
 const CHAR_CLASSES: Record<string, (ch: string) => boolean> = {
   'alpha': (ch) => /^[a-zA-Z]$/.test(ch),
   'digit': (ch) => /^[0-9]$/.test(ch),
@@ -42,9 +44,13 @@ export function parseBlock(
   rules: KtgBlock,
   ctx: KtgContext,
   evaluator: Evaluator,
+  options?: { caseSensitive?: boolean },
 ): boolean {
+  const prev = caseSensitiveLitWords;
+  caseSensitiveLitWords = options?.caseSensitive ?? false;
   const input: ParseInput = { mode: 'block', values: inputBlock.values };
   const result = matchSequence(input, 0, rules.values, ctx, evaluator, []);
+  caseSensitiveLitWords = prev;
   return result !== null && result === inputLength(input);
 }
 
@@ -181,8 +187,11 @@ function matchOneRule(
     if (rule.type === 'lit-word!') {
       if (iPos >= len) return null;
       const val = input.values[iPos];
-      if (val.type === 'word!' && val.name === rule.name) return [iPos + 1, rPos + 1];
-      if (val.type === 'lit-word!' && val.name === rule.name) return [iPos + 1, rPos + 1];
+      const nameMatch = caseSensitiveLitWords
+        ? (a: string, b: string) => a === b
+        : (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+      if (val.type === 'word!' && nameMatch(val.name, rule.name)) return [iPos + 1, rPos + 1];
+      if (val.type === 'lit-word!' && nameMatch(val.name, rule.name)) return [iPos + 1, rPos + 1];
       return null;
     }
 

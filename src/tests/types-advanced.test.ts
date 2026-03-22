@@ -107,3 +107,70 @@ describe('typed blocks', () => {
     expect(ev.evalString('f [1 "a" true]')).toEqual({ type: 'integer!', value: 3 });
   });
 });
+
+describe('@type validates context fields', () => {
+  test('accepts context with matching fields', () => {
+    const ev = new Evaluator();
+    ev.evalString("person!: @type ['name [string!] 'age [integer!]]");
+    ev.evalString('f: function [p [person!]] [p/name]');
+    ev.evalString('p: context [name: "Ray" age: 30]');
+    expect(ev.evalString('f p')).toEqual({ type: 'string!', value: 'Ray' });
+  });
+
+  test('accepts context with extra fields', () => {
+    const ev = new Evaluator();
+    ev.evalString("person!: @type ['name [string!] 'age [integer!]]");
+    ev.evalString('f: function [p [person!]] [p/name]');
+    ev.evalString('p: context [name: "Ray" age: 30 email: "ray@test.com"]');
+    expect(ev.evalString('f p')).toEqual({ type: 'string!', value: 'Ray' });
+  });
+
+  test('rejects context missing a field', () => {
+    const ev = new Evaluator();
+    ev.evalString("person!: @type ['name [string!] 'age [integer!]]");
+    ev.evalString('f: function [p [person!]] [p/name]');
+    expect(() => ev.evalString('f context [name: "Ray"]'))
+      .toThrow('p expects person!, got context!');
+  });
+
+  test('rejects context with wrong field type', () => {
+    const ev = new Evaluator();
+    ev.evalString("person!: @type ['name [string!] 'age [integer!]]");
+    ev.evalString('f: function [p [person!]] [p/name]');
+    expect(() => ev.evalString('f context [name: "Ray" age: "thirty"]'))
+      .toThrow('p expects person!, got context!');
+  });
+
+  test('rejects non-context value', () => {
+    const ev = new Evaluator();
+    ev.evalString("person!: @type ['name [string!] 'age [integer!]]");
+    ev.evalString('f: function [p [person!]] [p/name]');
+    expect(() => ev.evalString('f 42'))
+      .toThrow('p expects person!, got integer!');
+  });
+
+  test('works with constructor functions', () => {
+    const ev = new Evaluator();
+    ev.evalString("card!: @type ['number [string!] 'balance [float!]]");
+    ev.evalString('Card: function [number [string!]] [context/from [balance: 0.0]]');
+    ev.evalString('check: function [c [card!]] [c/number]');
+    expect(ev.evalString('check Card "5555"'))
+      .toEqual({ type: 'string!', value: '5555' });
+  });
+
+  test('works with /where guard on context', () => {
+    const ev = new Evaluator();
+    ev.evalString("adult!: @type/where ['name [string!] 'age [integer!]] [it/age >= 18]");
+    ev.evalString('f: function [p [adult!]] [p/name]');
+    ev.evalString('p: context [name: "Ray" age: 30]');
+    expect(ev.evalString('f p')).toEqual({ type: 'string!', value: 'Ray' });
+  });
+
+  test('/where guard rejects on context', () => {
+    const ev = new Evaluator();
+    ev.evalString("adult!: @type/where ['name [string!] 'age [integer!]] [it/age >= 18]");
+    ev.evalString('f: function [p [adult!]] [p/name]');
+    expect(() => ev.evalString('f context [name: "Kid" age: 12]'))
+      .toThrow('p fails where clause for adult!');
+  });
+});

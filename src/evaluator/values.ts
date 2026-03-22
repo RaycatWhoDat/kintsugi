@@ -33,6 +33,7 @@ export type KtgLogic    = { type: 'logic!';   value: boolean };
 export type KtgNone     = { type: 'none!' };
 export type KtgPair     = { type: 'pair!';    x: number; y: number };
 export type KtgTuple    = { type: 'tuple!';   parts: number[] };
+export type KtgMoney    = { type: 'money!';   cents: number };
 export type KtgDate     = { type: 'date!';    value: string };
 export type KtgTime     = { type: 'time!';    value: string };
 export type KtgFile     = { type: 'file!';    value: string };
@@ -54,7 +55,7 @@ export type KtgParen    = { type: 'paren!';    values: KtgValue[] };
 export type KtgMap      = { type: 'map!';      entries: Map<string, KtgValue> };
 export type KtgCtxValue = { type: 'context!';   context: KtgContext };
 
-export type ParamSpec = { name: string; typeConstraint?: string; elementType?: string };
+export type ParamSpec = { name: string; typeConstraint?: string; elementType?: string; optional?: boolean };
 
 export type FuncSpec = {
   params: ParamSpec[];
@@ -69,11 +70,11 @@ export type KtgNative   = { type: 'native!';   name: string; arity: number; refi
 export type KtgOp       = { type: 'op!';       name: string; fn: (l: KtgValue, r: KtgValue) => KtgValue };
 export type KtgOpSymbol = { type: 'op!';       symbol: string };
 
-export type KtgTypeName = { type: 'type!';     name: string; rule?: KtgBlock; guard?: KtgBlock };
+export type KtgTypeName = { type: 'type!';     name: string; rule?: KtgBlock; guard?: KtgBlock; enum?: boolean };
 
 export type KtgValue =
   | KtgInteger | KtgFloat | KtgString | KtgLogic | KtgNone
-  | KtgPair | KtgTuple | KtgDate | KtgTime
+  | KtgPair | KtgTuple | KtgMoney | KtgDate | KtgTime
   | KtgFile | KtgUrl | KtgEmail
   | KtgWord | KtgSetWord | KtgGetWord | KtgLitWord | KtgMetaWord
   | KtgPath | KtgSetPath | KtgGetPath | KtgLitPath
@@ -114,7 +115,7 @@ export function astToValue(node: AstNode): KtgValue {
       return { type: 'pair!', x, y };
     }
     case TOKEN_TYPES.TUPLE:    return { type: 'tuple!', parts: v.split('.').map(Number) };
-    case TOKEN_TYPES.MONEY:    return { type: 'float!', value: parseFloat(v) };
+    case TOKEN_TYPES.MONEY:    return { type: 'money!', cents: Math.round(parseFloat(v) * 100) };
     case TOKEN_TYPES.DATE:     return { type: 'date!',  value: v };
     case TOKEN_TYPES.TIME:     return { type: 'time!',  value: v };
     case TOKEN_TYPES.FILE:     return { type: 'file!',   value: v };
@@ -162,6 +163,11 @@ export function valueToString(val: KtgValue): string {
     case 'none!':      return 'none';
     case 'pair!':      return `${val.x}x${val.y}`;
     case 'tuple!':     return val.parts.join('.');
+    case 'money!': {
+      const sign = val.cents < 0 ? '-' : '';
+      const abs = Math.abs(val.cents);
+      return `${sign}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+    }
     case 'date!':      return val.value;
     case 'time!':      return val.value;
     case 'file!':      return `%${val.value}`;
@@ -170,7 +176,7 @@ export function valueToString(val: KtgValue): string {
     case 'word!':      return val.name;
     case 'set-word!':  return `${val.name}:`;
     case 'get-word!':  return `:${val.name}`;
-    case 'lit-word!':  return `'${val.name}`;
+    case 'lit-word!':  return val.name;
     case 'meta-word!': return `@${val.name}`;
     case 'path!':      return val.segments.join('/');
     case 'set-path!':  return `${val.segments.join('/')}:`;

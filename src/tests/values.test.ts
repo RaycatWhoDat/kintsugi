@@ -66,9 +66,9 @@ describe('astToValue', () => {
     expect(val).toEqual({ type: 'tuple!', parts: [1, 2, 3] });
   });
 
-  test('money becomes float', () => {
+  test('money becomes money!', () => {
     const val = convert('$19.99');
-    expect(val).toEqual({ type: 'float!', value: 19.99 });
+    expect(val).toEqual({ type: 'money!', cents: 1999 });
   });
 
   test('date', () => {

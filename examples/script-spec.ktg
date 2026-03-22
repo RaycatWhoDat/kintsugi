@@ -304,6 +304,10 @@ make-adder: function [n] [function [x] [x + n]]
 add5: make-adder 5
 print add5 10                           ; 15
 
+; does — shorthand for function with no parameters
+greet-world: does [print "Hello, world!"]
+greet-world                             ; Hello, world!
+
 
 ; ============================================================
 ; BLOCK OPERATIONS
@@ -452,6 +456,7 @@ word? 'hello                           ; => true
 meta-word? @enter                      ; => true
 map? make map! [a: 1]                  ; => true
 function? :add                          ; => true
+money? $19.99                           ; => true
 ; Union predicates work too:
 number? 3.14                           ; => true (integer! or float!)
 any-word? 'hello                       ; => true
@@ -470,6 +475,7 @@ to float! 7                             ; => 7.0
 to block! "hello"                       ; => ["hello"]
 to word! "hello"                        ; => word
 to set-word! "x"                        ; => set-word
+to get-word! "x"                        ; => get-word
 to lit-word! "name"                     ; => lit-word
 to meta-word! "add"                     ; => meta-word
 to integer! true                        ; => 1
@@ -490,8 +496,37 @@ from-codepoint 65                       ; => "A"
 ; number!     = integer! | float!
 ; any-word!   = word! | set-word! | get-word! | lit-word! | meta-word!
 ; any-block!  = block! | paren! | path!
-; scalar!     = integer! | float! | date! | time! | pair! | tuple!
+; scalar!     = integer! | float! | money! | date! | time! | pair! | tuple!
 ; any-type!   = matches any type
+
+; --- Money ---
+; money! is a precise numeric type stored as integer cents.
+; No float drift — $0.10 + $0.20 is exactly $0.30.
+$19.99                                  ; => money! (1999 cents)
+$10.00 + $5.50                          ; => $15.50
+$10.00 - $3.25                          ; => $6.75
+$10.00 * 3                              ; => $30.00
+$10.00 / 4                              ; => $2.50
+$10.00 > $5.00                          ; => true
+to money! 42                            ; => $42.00
+to money! "19.99"                       ; => $19.99
+
+; --- Time ---
+; time is a context with utilities. time/now returns
+; a Unix epoch timestamp (integer).
+; time/now                              ; => 1774153016 (current epoch)
+
+; --- Enum types (@type/enum) ---
+; @type/enum defines strict case-sensitive lit-word unions.
+; Regular @type lit-word matching is case-insensitive (Rebol style).
+; @type/enum requires exact case — for when casing matters.
+
+direction!: @type ['north | 'south | 'east | 'west]
+; is? direction! 'NORTH                 ; => true (case-insensitive)
+
+status!: @type/enum ['Active | 'Inactive | 'Pending]
+; is? status! 'Active                   ; => true
+; is? status! 'active                   ; => false (strict)
 
 ; --- Custom types (@type) ---
 ; @type defines types via parse rules. Union types use |.
@@ -510,6 +545,78 @@ positive!: @type/where [integer!] [it > 0]
 ; sum: function [nums [block! integer!]] [...]
 ; sum [1 2 3]                           ; ok
 ; sum [1 "two" 3]                       ; ERROR: expects block! of integer!
+
+; --- Optional types (opt) ---
+; opt means "this type or none!" — the param accepts its
+; declared type or none. It does NOT change arity.
+;
+; IMPORTANT: Kintsugi inherits Rebol's evaluation model —
+; functions always consume a fixed number of arguments from
+; the value stream. There are no optional positional arguments.
+; A function with arity 2 always eats 2 values, period.
+;
+; opt is a TYPE annotation, not an arity modifier.
+; It says "none is a valid value here."
+;
+;   [x [opt integer!]]   — x accepts integer! or none!
+;   [x [integer!]]       — x accepts only integer!
+;   [x]                  — x accepts any type (untyped)
+;
+; Because evaluation is greedy, you must always pass a value:
+;   f: function [x [opt integer!]] [x]
+;   f 42                                ; => 42
+;   f none                              ; => none
+;   f                                   ; ERROR if more code follows
+;
+; The last line fails because the evaluator tries to consume
+; the NEXT expression in the stream as f's argument. In Rebol
+; lineage languages, "zero or one arguments" does not exist.
+;
+; When you want truly optional behavior, use a refinement:
+;   greet: function [/with name [string!]] [
+;     either with [join "Hi " name] ["Hi stranger"]
+;   ]
+;   greet                               ; "Hi stranger"
+;   greet/with "Ray"                    ; "Hi Ray"
+;
+; opt is useful for:
+;   — Fields that start as none and get filled later
+;   — Refinement params that accept none
+;   — Constructor params where none is a valid initial state
+
+; --- Structural types for contexts ---
+; @type rules with 'field [type!] pairs validate context
+; fields, not just block structure. This lets you define
+; interfaces for your context-based objects.
+;
+;   person!: @type ['name [string!] 'age [integer!]]
+;
+; This means: any context! with a 'name field of type string!
+; and an 'age field of type integer! matches person!.
+; Extra fields are allowed — types are open (like interfaces).
+
+person!: @type ['name [string!] 'age [integer!]]
+
+Person: function [name [string!] age [integer!]] [
+  context/from []
+]
+
+greet-person: function [p [person!]] [
+  rejoin ["Hi, I'm " p/name]
+]
+
+print greet-person Person "Ray" 30      ; Hi, I'm Ray
+
+; Contexts with extra fields still match:
+p2: context [name: "Jo" age: 25 email: "jo@test.com"]
+print greet-person p2                   ; Hi, I'm Jo
+
+; Wrong or missing fields are rejected:
+; greet-person context [name: "X"]      ; ERROR: missing age
+; greet-person 42                       ; ERROR: not a context
+
+; Guards work on context types too:
+; adult!: @type/where ['name [string!] 'age [integer!]] [it/age >= 18]
 
 ; --- Math utilities ---
 print min 3 7                           ; 3
@@ -709,6 +816,129 @@ do code                                 ; => 30
 
 ; Introspection
 words-of point                          ; => [x y]
+
+; --- Objects via contexts ---
+; Contexts + closures give you object-oriented patterns.
+; No classes needed — constructors are just functions that
+; return contexts. context/from auto-binds the enclosing
+; function's params so you only write methods.
+
+Person: function [name age] [
+  context/from [
+    greet: function [] [
+      rejoin ["Hi, I'm " name " and I'm " age " years old"]
+    ]
+  ]
+]
+
+p: Person "Ray" 30
+print p/greet                           ; Hi, I'm Ray and I'm 30 years old
+print p/name                            ; Ray
+print p/age                             ; 30
+
+; --- Mutation via set/upvalue ---
+; set-word writes to the local (function) context.
+; set/upvalue walks the parent chain and updates
+; the variable where it was originally defined.
+
+Counter: function [n] [
+  context/from [
+    increment: function [] [
+      set/upvalue 'n (n + 1)
+    ]
+    value: function [] [n]
+  ]
+]
+
+c: Counter 0
+c/increment
+c/increment
+c/increment
+print c/value                           ; 3
+
+
+; ============================================================
+; OBJECT DIALECT
+; ============================================================
+; object defines a prototype with typed fields, defaults,
+; and methods. make stamps instances from prototypes.
+; Methods access the instance via self (lexically bound).
+;
+; Convention: prototypes use PascalCase — Person, Card,
+; Reader. This distinguishes them from regular words at
+; the call site. Lowercase words are values and functions;
+; PascalCase words are prototypes.
+;
+; Field syntax:
+;   name [type!]                — required (must be set in make)
+;   name [type!] @default val   — defaulted (pre-filled, implies opt)
+;   name [opt type!] @default none — explicit opt (same effect)
+;
+; @default implies opt — the field accepts none! automatically.
+; You CAN still write opt explicitly, but convention is to
+; let @default handle it.
+;
+; Everything after field declarations is evaluated as the
+; prototype's body — typically method definitions.
+
+Counter2: object [
+  n [integer!] @default 0
+  increment: function [] [self/n: self/n + 1]
+  value: function [] [self/n]
+]
+
+c2: make Counter2 []
+c2/increment
+c2/increment
+print c2/value                          ; 2
+
+; Required fields must be set in make:
+Person2: object [
+  name [string!]
+  age [integer!]
+  greet: function [] [
+    rejoin ["Hi, I'm " self/name " age " self/age]
+  ]
+  birthday: function [] [
+    self/age: self/age + 1
+  ]
+]
+
+p2: make Person2 [name: "Ray" age: 30]
+print p2/greet                          ; Hi, I'm Ray age 30
+p2/birthday
+print p2/age                            ; 31
+
+; Clone from an instance
+p3: make p2 [age: 25]
+print p3/name                           ; Ray
+print p3/age                            ; 25
+print p2/age                            ; 31 (original unchanged)
+
+; --- Mixed required and defaulted fields ---
+; Required fields (no @default) must be provided in make.
+; Defaulted fields are pre-filled and can be overridden.
+
+Account: object [
+  owner [string!]
+  currency [string!] @default "USD"
+  balance [money!] @default $0.00
+  deposit: function [amount [money!]] [
+    self/balance: self/balance + amount
+  ]
+  summary: function [] [
+    rejoin [self/owner ": " self/currency " " self/balance]
+  ]
+]
+
+a2: make Account [owner: "Ray"]
+a2/deposit $100.00
+print a2/summary                        ; Ray: USD $100.00
+print a2/currency                       ; USD
+
+; Override a default at creation time
+b2: make Account [owner: "Jo" currency: "EUR" balance: $50.00]
+print b2/summary                        ; Jo: EUR $50.00
 
 
 ; ============================================================

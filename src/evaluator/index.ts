@@ -3,8 +3,8 @@ export { KtgContext } from './context';
 export {
   type KtgValue,
   type KtgInteger, type KtgFloat, type KtgString, type KtgLogic, type KtgNone,
-  type KtgChar, type KtgPair, type KtgTuple, type KtgDate, type KtgTime,
-  type KtgBinary, type KtgFile, type KtgUrl, type KtgEmail,
+  type KtgPair, type KtgTuple, type KtgDate, type KtgTime,
+  type KtgFile, type KtgUrl, type KtgEmail,
   type KtgWord, type KtgSetWord, type KtgGetWord, type KtgLitWord,
   type KtgPath, type KtgSetPath, type KtgGetPath, type KtgLitPath,
   type KtgBlock, type KtgParen, type KtgMap, type KtgCtxValue,

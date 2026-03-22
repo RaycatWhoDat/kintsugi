@@ -102,3 +102,40 @@ describe('structural types as constraints', () => {
     expect(ev.evalString('check [name "Alice" age 25]')).toEqual({ type: 'string!', value: 'Alice' });
   });
 });
+
+describe('optional parameter types (opt)', () => {
+  test('accepts the declared type', () => {
+    expect(eval_('f: function [x [opt integer!]] [x]  f 42'))
+      .toEqual({ type: 'integer!', value: 42 });
+  });
+
+  test('accepts none', () => {
+    expect(eval_('f: function [x [opt integer!]] [x]  f none'))
+      .toEqual({ type: 'none!' });
+  });
+
+  test('rejects wrong type', () => {
+    expect(() => eval_('f: function [x [opt integer!]] [x]  f "hello"'))
+      .toThrow('x expects integer!, got string!');
+  });
+
+  test('defaults to none when omitted', () => {
+    expect(eval_('f: function [a [integer!] b [opt string!]] [b]  f 1'))
+      .toEqual({ type: 'none!' });
+  });
+
+  test('works with custom @type', () => {
+    const ev = new Evaluator();
+    ev.evalString("point!: @type ['x integer! 'y integer!]");
+    ev.evalString('f: function [p [opt point!]] [p]');
+    expect(ev.evalString('f [x 1 y 2]')).toMatchObject({ type: 'block!' });
+    expect(ev.evalString('f none')).toEqual({ type: 'none!' });
+  });
+
+  test('works on refinement params', () => {
+    const ev = new Evaluator();
+    ev.evalString('f: function [/tag label [opt string!]] [label]');
+    expect(ev.evalString('f/tag "hi"')).toEqual({ type: 'string!', value: 'hi' });
+    expect(ev.evalString('f/tag none')).toEqual({ type: 'none!' });
+  });
+});

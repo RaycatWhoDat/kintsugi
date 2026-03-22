@@ -6,7 +6,7 @@ import {
   KtgError, BreakSignal, ReturnSignal,
 } from './values';
 import type { Evaluator } from './evaluator';
-import { matchesType } from './type-check';
+import { matchesType, validateCustomType, checkType } from './type-check';
 
 export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
   const native = (
@@ -340,6 +340,18 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
           return { type: 'time!', value: value.value };
         }
         break;
+      case 'money!':
+        if (value.type === 'integer!' || value.type === 'float!') {
+          return { type: 'money!', cents: Math.round(numVal(value) * 100) };
+        }
+        if (value.type === 'string!') {
+          const str = value.value.replace(/^\$/, '');
+          const n = parseFloat(str);
+          if (isNaN(n)) break;
+          return { type: 'money!', cents: Math.round(n * 100) };
+        }
+        if (value.type === 'money!') return value;
+        break;
       case 'pair!':
         if (value.type === 'string!') {
           const pm = value.value.match(/^(-?\d+)x(-?\d+)$/);
@@ -382,10 +394,11 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
     throw new KtgError('type', `Cannot convert ${value.type} to ${typeName}`);
   });
 
-  native('make', 2, (args) => {
-    const [targetType, spec] = args;
-    const typeName = targetType.type === 'type!' ? targetType.name : valueToString(targetType);
-    if (typeName === 'map!' && spec.type === 'block!') {
+  native('make', 2, (args, ev, callerCtx) => {
+    const [target, spec] = args;
+
+    // make map! [...]
+    if (target.type === 'type!' && target.name === 'map!' && spec.type === 'block!') {
       const entries = new Map<string, KtgValue>();
       for (let i = 0; i < spec.values.length - 1; i += 2) {
         const key = spec.values[i];
@@ -395,15 +408,93 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
       }
       return { type: 'map!', entries };
     }
+
+    // make <context> [overrides]
+    if (target.type === 'context!' && spec.type === 'block!') {
+      const cloned = target.context.clone();
+      const clonedValue: KtgValue = { type: 'context!', context: cloned };
+
+      // Re-bind self if this is an object
+      if (cloned.has('self')) {
+        cloned.set('self', clonedValue);
+      }
+
+      // Copy field metadata if present
+      if ((target as any).__fields) {
+        (clonedValue as any).__fields = (target as any).__fields;
+      }
+
+      ev.evalBlock(spec as KtgBlock, cloned);
+
+      // Type-check fields against spec
+      if ((target as any).__fields) {
+        for (const field of (target as any).__fields) {
+          const val = cloned.get(field.name);
+          if (val && val.type !== 'none!' && field.type !== 'any-type!') {
+            checkType(val, field.type, field.name, callerCtx, ev);
+          }
+        }
+      }
+
+      return clonedValue;
+    }
+
+    const typeName = target.type === 'type!' ? target.name : valueToString(target);
     throw new KtgError('type', `make not supported for ${typeName}`);
   });
 
-  native('context', 1, (args, ev, callerCtx) => {
+  native('context', 1, (args, ev, callerCtx, refinements) => {
     const block = args[0];
     if (block.type !== 'block!') throw new KtgError('type', 'context expects a block');
     const childCtx = new KtgContext(callerCtx);
+    if (refinements.includes('from')) {
+      for (const [key, val] of callerCtx.entries()) {
+        childCtx.set(key, val);
+      }
+    }
     ev.evalBlock(block, childCtx);
     return { type: 'context!', context: childCtx };
+  }, { from: 0 });
+
+  native('object', 1, (args, ev, callerCtx) => {
+    const block = args[0];
+    if (block.type !== 'block!') throw new KtgError('type', 'object expects a block');
+
+    const { parseObjectDialect } = require('./dialect-object');
+    const { fields, bodyStart } = parseObjectDialect(block as KtgBlock);
+
+    // Build prototype context
+    const objCtx = new KtgContext(callerCtx);
+
+    // Set field defaults — evaluate the default value expression
+    for (const field of fields) {
+      if (field.hasDefault) {
+        const [defaultVal] = ev.evalNext([field.defaultValue], 0, callerCtx);
+        objCtx.set(field.name, defaultVal);
+      } else {
+        objCtx.set(field.name, NONE);
+      }
+    }
+
+    // Create the context value so self can reference it
+    const objValue: KtgValue = { type: 'context!', context: objCtx };
+
+    // Bind self
+    objCtx.set('self', objValue);
+
+    // Evaluate the rest of the block (methods, computed fields) in the object context
+    if (bodyStart < (block as KtgBlock).values.length) {
+      const methodBlock: KtgBlock = {
+        type: 'block!',
+        values: (block as KtgBlock).values.slice(bodyStart),
+      };
+      ev.evalBlock(methodBlock, objCtx);
+    }
+
+    // Store field specs as metadata for type checking and make
+    (objValue as any).__fields = fields;
+
+    return objValue;
   });
 
   // === Group F: String Operations ===
@@ -480,6 +571,7 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
   });
 
   native('negate', 1, (args) => {
+    if (args[0].type === 'money!') return { type: 'money!', cents: -args[0].cents };
     const v = numVal(args[0]);
     return args[0].type === 'float!' ? { type: 'float!', value: -v } : { type: 'integer!', value: -v };
   });
@@ -545,7 +637,16 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
     return { type: 'block!', values: composeBlock(v, ev, callerCtx) };
   });
 
-  native('set', 2, (args, _ev, callerCtx) => {
+  native('set', 2, (args, _ev, callerCtx, refinements) => {
+    if (refinements.includes('upvalue')) {
+      const wordVal = args[0];
+      if (wordVal.type !== 'lit-word!' && wordVal.type !== 'word!') {
+        throw new KtgError('type', 'set/upvalue expects a lit-word or word as first argument');
+      }
+      const value = args[1];
+      callerCtx.setUp(wordVal.name, value);
+      return value;
+    }
     const [words, values] = args;
     if (words.type === 'block!' && values.type === 'block!') {
       for (let i = 0; i < words.values.length; i++) {
@@ -558,7 +659,7 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
       return values;
     }
     throw new KtgError('type', 'set expects two blocks');
-  });
+  }, { upvalue: 0 });
 
   native('apply', 2, (args, ev, callerCtx) => {
     const [fn, argBlock] = args;
@@ -572,6 +673,11 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
   const { createFunction } = require('./functions');
   native('function', 2, (args, _ev, callerCtx) => {
     return createFunction(args[0], args[1], callerCtx);
+  });
+
+  native('does', 1, (args, _ev, callerCtx) => {
+    const emptySpec: KtgBlock = { type: 'block!', values: [] };
+    return createFunction(emptySpec, args[0], callerCtx);
   });
 
   // === Group I: Error Handling ===
@@ -708,8 +814,9 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
     if (block.type !== 'block!') throw new KtgError('type', '@type expects a block');
     const rule = block as KtgBlock;
     const guard = refinements.includes('where') && args[1]?.type === 'block!' ? args[1] as KtgBlock : undefined;
-    return { type: 'type!', name: '', rule, guard } as any;
-  }, { where: 1 });
+    const isEnum = refinements.includes('enum');
+    return { type: 'type!', name: '', rule, guard, enum: isEnum } as any;
+  }, { where: 1, enum: 0 });
 
   // === Header ===
   // When running a file directly, the header is a no-op.
@@ -759,40 +866,45 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
   native('is?', 2, (args, ev, callerCtx) => {
     const [typeArg, value] = args;
 
-    // Resolve the type constraint
-    let rule: KtgBlock;
-    let guard: KtgBlock | undefined;
+    // Object prototype — check fields structurally
+    if (typeArg.type === 'context!' && (typeArg as any).__fields) {
+      if (value.type !== 'context!') return FALSE;
+      const fields = (typeArg as any).__fields;
+      const ctxVal = (value as any).context as KtgContext;
+      for (const field of fields) {
+        const fieldVal = ctxVal.get(field.name);
+        if (fieldVal === undefined) return FALSE;
+        if (field.optional && fieldVal.type === 'none!') continue;
+        if (!matchesType(fieldVal, field.type, callerCtx, ev)) return FALSE;
+      }
+      return TRUE;
+    }
 
+    // type! with rule — use validateCustomType (handles both contexts and blocks)
     if (typeArg.type === 'type!' && typeArg.rule) {
-      rule = typeArg.rule;
-      guard = typeArg.guard;
-    } else if (typeArg.type === 'type!') {
-      // Built-in type name like integer! — wrap as a parse rule
-      rule = { type: 'block!', values: [{ type: 'word!', name: typeArg.name }] };
-    } else if (typeArg.type === 'block!') {
-      // Raw parse rule block
-      rule = typeArg;
-    } else {
-      throw new KtgError('type', 'is? expects a type, @type value, or rule block');
+      return validateCustomType(value, typeArg, callerCtx, ev) ? TRUE : FALSE;
     }
 
-    const input = value.type === 'block!'
-      ? value
-      : { type: 'block!' as const, values: [value] };
-
-    if (!parseBlock(input as any, rule, callerCtx, ev)) return FALSE;
-    if (guard) {
-      const guardCtx = new KtgContext(callerCtx);
-      guardCtx.set('it', value);
-      if (!isTruthy(ev.evalBlock(guard, guardCtx))) return FALSE;
+    // Built-in type name like integer!
+    if (typeArg.type === 'type!') {
+      return matchesType(value, typeArg.name, callerCtx, ev) ? TRUE : FALSE;
     }
-    return TRUE;
+
+    // Raw parse rule block
+    if (typeArg.type === 'block!') {
+      const input = value.type === 'block!'
+        ? value
+        : { type: 'block!' as const, values: [value] };
+      return parseBlock(input as any, typeArg, callerCtx, ev) ? TRUE : FALSE;
+    }
+
+    throw new KtgError('type', 'is? expects a type, @type value, or rule block');
   });
 
   // === Type Names ===
 
   const typeNames = [
-    'integer!', 'float!', 'string!', 'logic!', 'none!',
+    'integer!', 'float!', 'money!', 'string!', 'logic!', 'none!',
     'pair!', 'tuple!', 'date!', 'time!', 'file!',
     'url!', 'email!', 'word!', 'set-word!', 'get-word!', 'lit-word!', 'meta-word!',
     'path!', 'block!', 'paren!', 'map!', 'context!', 'function!',
@@ -817,6 +929,16 @@ export function registerNatives(ctx: KtgContext, evaluator: Evaluator): void {
     const predName = tn.replace('!', '?');
     native(predName, 1, (args) => ({ type: 'logic!', value: matchesType(args[0], tn) }));
   }
+
+  // === time context ===
+  const timeCtx = new KtgContext(null);
+  timeCtx.set('now', {
+    type: 'native!',
+    name: 'time/now',
+    arity: 0,
+    fn: () => ({ type: 'integer!', value: Math.floor(Date.now() / 1000) }),
+  } as KtgNative);
+  ctx.set('time', { type: 'context!', context: timeCtx });
 }
 
 // --- Private helpers ---

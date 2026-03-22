@@ -119,6 +119,7 @@ export class Evaluator {
       case 'tuple!':
       case 'date!':
       case 'time!':
+      case 'money!':
       case 'file!':
       case 'url!':
       case 'email!':
@@ -164,6 +165,52 @@ export class Evaluator {
         }
         const setCtx = val.bound ?? ctx;
         setCtx.set(val.name, result);
+
+        // Auto-register type and constructor for object prototypes
+        if (result.type === 'context!' && (result as any).__fields) {
+          const kebab = pascalToKebab(val.name);
+          const fields: any[] = (result as any).__fields;
+
+          // Register type name: Person -> person!
+          const typeName = kebab + '!';
+          const ruleValues: KtgValue[] = [];
+          for (const f of fields) {
+            ruleValues.push({ type: 'lit-word!', name: f.name });
+            ruleValues.push({ type: 'block!', values: [{ type: 'word!', name: f.type }] });
+          }
+          setCtx.set(typeName, { type: 'type!', name: typeName, rule: { type: 'block!', values: ruleValues } } as KtgValue);
+
+          // Register constructor: Person -> make-person
+          const requiredFields = fields.filter((f: any) => !f.hasDefault);
+          const constructorName = 'make-' + kebab;
+          const prototype = result;
+          const params: import('./values').ParamSpec[] = requiredFields.map((f: any) => ({
+            name: f.name,
+            typeConstraint: f.type === 'any-type!' ? undefined : f.type,
+            optional: f.optional,
+          }));
+          const constructorFn: import('./values').KtgNative = {
+            type: 'native!',
+            name: constructorName,
+            arity: requiredFields.length,
+            fn: (args, ev, callerCtx) => {
+              const cloned = (prototype as any).context.clone();
+              const clonedValue: KtgValue = { type: 'context!', context: cloned };
+              if (cloned.has('self')) cloned.set('self', clonedValue);
+              if ((prototype as any).__fields) (clonedValue as any).__fields = (prototype as any).__fields;
+              for (let i = 0; i < requiredFields.length; i++) {
+                const f = requiredFields[i];
+                if (f.type !== 'any-type!') {
+                  checkType(args[i], f.type, f.name, callerCtx, ev);
+                }
+                cloned.set(f.name, args[i]);
+              }
+              return clonedValue;
+            },
+          };
+          setCtx.set(constructorName, constructorFn as KtgValue);
+        }
+
         return [result, nextPos];
       }
 
@@ -278,6 +325,7 @@ export class Evaluator {
         if (l.type === 'date!' && r.type === 'integer!') return { type: 'date!', value: addDays(l.value, r.value) };
         if (l.type === 'time!' && r.type === 'time!') return { type: 'time!', value: addTimes(l.value, r.value) };
         if (l.type === 'time!' && r.type === 'integer!') return { type: 'time!', value: addSeconds(l.value, r.value) };
+        if (l.type === 'money!' && r.type === 'money!') return { type: 'money!', cents: l.cents + r.cents };
         return { type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) + numVal(r) };
       };
       case '-': return (l, r) => {
@@ -285,12 +333,18 @@ export class Evaluator {
         if (l.type === 'date!' && r.type === 'date!') return { type: 'integer!', value: diffDays(l.value, r.value) };
         if (l.type === 'time!' && r.type === 'time!') return { type: 'time!', value: subtractTimes(l.value, r.value) };
         if (l.type === 'time!' && r.type === 'integer!') return { type: 'time!', value: addSeconds(l.value, -r.value) };
+        if (l.type === 'money!' && r.type === 'money!') return { type: 'money!', cents: l.cents - r.cents };
         return { type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) - numVal(r) };
       };
-      case '*': return (l, r) => ({ type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) * numVal(r) });
+      case '*': return (l, r) => {
+        if (l.type === 'money!' && isNumeric(r)) return { type: 'money!', cents: Math.round(l.cents * numVal(r)) };
+        if (isNumeric(l) && r.type === 'money!') return { type: 'money!', cents: Math.round(numVal(l) * r.cents) };
+        return { type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) * numVal(r) };
+      };
       case '/': return (l, r) => {
         const rv = numVal(r);
         if (rv === 0) throw new KtgError('math', 'Division by zero');
+        if (l.type === 'money!' && isNumeric(r)) return { type: 'money!', cents: Math.round(l.cents / rv) };
         return { type: 'float!', value: numVal(l) / rv };
       };
       case '%': return (l, r) => ({ type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) % numVal(r) });
@@ -321,13 +375,17 @@ export class Evaluator {
     }
 
     // Otherwise, navigate into the value
+    let lastContext: KtgValue | undefined;
+    let current: KtgValue = result;
     for (let i = 1; i < segments.length; i++) {
-      result = this.accessField(result, segments[i]);
+      if (current.type === 'context!') lastContext = current;
+      current = this.accessField(current, segments[i]);
     }
+    result = current;
 
-    // If the resolved value is callable, call it
+    // If the resolved value is callable, call it — inject self if from a context
     if (isCallable(result)) {
-      return this.callCallable(result, values, pos + 1, ctx);
+      return this.callCallable(result, values, pos + 1, ctx, undefined, lastContext);
     }
 
     return [result, pos + 1];
@@ -371,7 +429,7 @@ export class Evaluator {
 
   // --- Calling ---
 
-  callCallable(fn: KtgFunction | KtgNative, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[]): [KtgValue, number] {
+  callCallable(fn: KtgFunction | KtgNative, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[], selfValue?: KtgValue): [KtgValue, number] {
     if (fn.type === 'native!') {
       const args: KtgValue[] = [];
       // Consume base arity args
@@ -407,22 +465,31 @@ export class Evaluator {
       return [fn.fn(args, this, ctx, activeRefinements), pos];
     }
 
-    return this.callFunction(fn, values, pos, ctx, refinements);
+    return this.callFunction(fn, values, pos, ctx, refinements, selfValue);
   }
 
-  callFunction(fn: KtgFunction, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[]): [KtgValue, number] {
+  callFunction(fn: KtgFunction, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[], selfValue?: KtgValue): [KtgValue, number] {
     const childCtx = fn.closure.child();
+
+    // Inject self for object method calls
+    if (selfValue) {
+      childCtx.set('self', selfValue);
+    }
 
     // Bind params with type checking
     for (const param of fn.spec.params) {
       if (pos >= values.length) {
+        if (param.optional) {
+          childCtx.set(param.name, NONE);
+          continue;
+        }
         throw new KtgError('args', `Function expects argument '${param.name}'`);
       }
       let [arg, nextPos] = this.evalNext(values, pos, ctx);
       while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
         [arg, nextPos] = this.applyInfix(arg, values, nextPos, ctx);
       }
-      if (param.typeConstraint) {
+      if (param.typeConstraint && !(param.optional && arg.type === 'none!')) {
         checkType(arg, param.typeConstraint, param.name, ctx, this, param.elementType);
       }
       childCtx.set(param.name, arg);
@@ -440,7 +507,7 @@ export class Evaluator {
           while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
             [arg, nextPos] = this.applyInfix(arg, values, nextPos, ctx);
           }
-          if (rp.typeConstraint) {
+          if (rp.typeConstraint && !(rp.optional && arg.type === 'none!')) {
             checkType(arg, rp.typeConstraint, rp.name, ctx, this);
           }
           childCtx.set(rp.name, arg);
@@ -516,6 +583,7 @@ function valuesEqual(a: KtgValue, b: KtgValue): boolean {
   if (a.type === 'meta-word!' && b.type === 'meta-word!') return a.name === b.name;
   if (a.type === 'date!' && b.type === 'date!') return a.value === b.value;
   if (a.type === 'time!' && b.type === 'time!') return a.value === b.value;
+  if (a.type === 'money!' && b.type === 'money!') return a.cents === b.cents;
   return false;
 }
 
@@ -524,6 +592,7 @@ function compareValues(a: KtgValue, b: KtgValue): number {
   if (a.type === 'string!' && b.type === 'string!') return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
   if (a.type === 'date!' && b.type === 'date!') return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
   if (a.type === 'time!' && b.type === 'time!') return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
+  if (a.type === 'money!' && b.type === 'money!') return a.cents - b.cents;
   throw new KtgError('type', `Cannot compare ${a.type} and ${b.type}`);
 }
 
@@ -554,6 +623,12 @@ function secondsToTime(total: number): string {
   const s = total % 60;
   const str = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return neg ? `-${str}` : str;
+}
+
+// --- Object helpers ---
+
+function pascalToKebab(name: string): string {
+  return name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
 }
 
 function addTimes(a: string, b: string): string {

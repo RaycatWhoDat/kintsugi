@@ -35,65 +35,72 @@
     st)
   "Syntax table for `kintsugi-mode'.")
 
+;; Type names — single source; predicates (name?) generated from these.
+(defconst kintsugi--type-names
+  '("integer" "float" "money" "string" "logic" "none"
+    "pair" "tuple" "date" "time" "file"
+    "url" "email" "word" "set-word" "get-word" "lit-word" "meta-word"
+    "path" "block" "paren" "map" "context" "function"
+    "native" "op"
+    "any-type" "number" "any-word" "any-block" "scalar")
+  "Type names without ! suffix.")
 
 (defconst kintsugi-font-lock-keywords
   (let ((control '("if" "either" "unless" "loop" "break" "return"
-                    "function" "do" "try" "match" "attempt" "parse"
+                    "function" "does" "do" "try" "match" "attempt" "parse"
                     "not" "and" "or" "all" "any"
                     ;; Loop dialect keywords
                     "for" "in" "from" "to" "by" "when"
                     ;; Attempt/match dialect keywords
                     "source" "then" "fallback" "retries" "default"))
-        (builtins '("print" "probe" "compose" "reduce" "apply"
-                     "select" "first" "second" "last" "pick"
-                     "append" "insert" "remove" "copy"
-                     "has?" "index?"
-                     "length?" "empty?" "type"
-                     "none?" "integer?" "float?" "logic?"
-                     "block?" "function?" "string?"
-                     "context?" "pair?" "tuple?" "date?" "time?"
-                     "file?" "url?" "email?" "word?" "meta-word?" "map?"
-                     "min" "max" "abs" "negate" "round" "odd?" "even?"
-                     "codepoint" "from-codepoint"
-                     "join" "rejoin" "replace" "split" "trim"
-                     "uppercase" "lowercase"
-                     "context" "bind" "words-of" "set"
-                     "require" "make" "to"
-                     "is?" "error"
-                     ;; Preprocess
-                     "emit" "platform")))
+        (builtins (append
+                    '("print" "probe" "compose" "reduce" "apply"
+                      "select" "first" "second" "last" "pick"
+                      "append" "insert" "remove" "copy"
+                      "has?" "index?"
+                      "length?" "empty?" "type"
+                      "odd?" "even?"
+                      "min" "max" "abs" "negate" "round"
+                      "codepoint" "from-codepoint"
+                      "join" "rejoin" "replace" "split" "trim"
+                      "uppercase" "lowercase"
+                      "context" "object" "bind" "words-of" "set"
+                      "require" "make" "to"
+                      "is?" "error"
+                      ;; Preprocess
+                      "emit" "platform")
+                    ;; Generated: integer? float? string? etc.
+                    (mapcar (lambda (name) (concat name "?"))
+                            kintsugi--type-names))))
     `(
       ;; Directives
       ("#\\(?:preprocess\\|inline\\)" . font-lock-preprocessor-face)
       ;; Inline preprocess #[expr]
       ("#\\[" . font-lock-preprocessor-face)
-      ;; Lifecycle hooks
-      ("@\\(?:enter\\|exit\\)\\b" . font-lock-preprocessor-face)
-      ;; Char literals #"x"
-      ("#\".\""  . font-lock-constant-face)
-      ;; Binary literals #{...}
-      ("#{[^}]*}" . font-lock-constant-face)
+      ;; Meta-words (@enter, @exit, @type/enum, etc.) — not preceded by alnum (that's email)
+      ("\\(?:^\\|[^[:alnum:]._-]\\)\\(@[[:alpha:]][[:alnum:]_?!~/-]*\\)"
+       1 font-lock-preprocessor-face)
       ;; URL literals (before email and file to avoid partial matches)
       ("[[:alpha:]][[:alnum:]+-]*://[^] \t\n[()]*" . font-lock-string-face)
-      ;; Email literals
-      ("[[:alnum:]._-]+@[[:alnum:]._-]+" . font-lock-string-face)
+      ;; Email literals (require alnum before @ to avoid matching @meta-words)
+      ("[[:alnum:]][[:alnum:]._-]*@[[:alnum:]._-]+" . font-lock-string-face)
       ;; File literals
       ("%[[:alnum:]/._-]+" . font-lock-string-face)
+      ;; Money literals ($19.99, $0.00)
+      ("\\$[0-9]+\\(?:\\.[0-9]+\\)?" . font-lock-constant-face)
       ;; Pair literals (NxN)
       ("\\b[0-9]+x[0-9]+\\b" . font-lock-constant-face)
       ;; Logic and none
       (,(regexp-opt '("true" "false" "on" "off" "yes" "no" "none") 'symbols)
        . font-lock-constant-face)
       ;; Set-words (word:) — before type names so word!: gets set-word face
-      ("\\_<[[:alpha:]][[:alnum:]_?!-]*:" . font-lock-variable-name-face)
+      ("\\_<[[:alpha:]][[:alnum:]_?!~-]*:" . font-lock-variable-name-face)
       ;; Type names (word!)
       ("\\_<[[:alpha:]][[:alnum:]_-]*!" . font-lock-type-face)
-      ;; Shape names (word~)
-      ("\\_<[[:alpha:]][[:alnum:]_-]*~" . font-lock-type-face)
       ;; Lit-words ('word)
-      ("'[[:alpha:]][[:alnum:]_?!-]*" . font-lock-constant-face)
+      ("'[[:alpha:]][[:alnum:]_?!~-]*" . font-lock-constant-face)
       ;; Get-words (:word)
-      ("\\(?:^\\|[^[:alnum:]_?!-]\\)\\(:[[:alpha:]][[:alnum:]_?!-]*\\)"
+      ("\\(?:^\\|[^[:alnum:]_?!~-]\\)\\(:[[:alpha:]][[:alnum:]_?!~-]*\\)"
        1 font-lock-builtin-face)
       ;; Control flow keywords
       (,(regexp-opt control 'symbols) . font-lock-keyword-face)

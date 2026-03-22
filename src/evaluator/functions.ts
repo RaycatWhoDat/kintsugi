@@ -45,23 +45,32 @@ export function parseSpec(specBlock: KtgBlock): FuncSpec {
     if (v.type === 'word!') {
       const name = v.name;
       let typeConstraint: string | undefined;
-
-      // Check if next value is a type constraint block [type!] or [block! element-type!]
       let elementType: string | undefined;
+      let optional = false;
+
+      // Check if next value is a type constraint block [type!], [opt type!], or [block! element-type!]
       const next = values[i + 1];
       if (next && next.type === 'block!' && next.values.length > 0) {
-        const typeVal = next.values[0];
-        if (typeVal.type === 'word!') typeConstraint = typeVal.name;
-        if (next.values.length > 1 && next.values[1].type === 'word!') {
-          elementType = (next.values[1] as any).name;
+        let ti = 0;
+        const typeVals = next.values;
+        if (typeVals[ti].type === 'word!' && (typeVals[ti] as any).name === 'opt') {
+          optional = true;
+          ti++;
+        }
+        if (ti < typeVals.length && typeVals[ti].type === 'word!') {
+          typeConstraint = (typeVals[ti] as any).name;
+          ti++;
+        }
+        if (ti < typeVals.length && typeVals[ti].type === 'word!') {
+          elementType = (typeVals[ti] as any).name;
         }
         i++;
       }
 
       if (currentRefinement) {
-        currentRefinement.params.push({ name, typeConstraint, elementType });
+        currentRefinement.params.push({ name, typeConstraint, elementType, optional });
       } else {
-        params.push({ name, typeConstraint, elementType });
+        params.push({ name, typeConstraint, elementType, optional });
       }
     }
   }
