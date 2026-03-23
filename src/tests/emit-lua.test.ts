@@ -124,8 +124,9 @@ describe('Lua emission — Tier 3 words', () => {
     expect(lua).toContain('local x = {1, (2 + 3), 4}');
   });
 
-  test('reduce is a compile error', () => {
-    expect(() => compile('x: reduce [1 + 2]')).toThrow('interpreter');
+  test('reduce compiles to block literal', () => {
+    const lua = compile('x: reduce [1 + 2 3 + 4]');
+    expect(lua).toContain('{(1 + 2), (3 + 4)}');
   });
 
   test('all desugars to and chain', () => {

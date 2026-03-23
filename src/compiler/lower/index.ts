@@ -233,7 +233,6 @@ function lowerNext(values: KtgValue[], pos: number, scope: Scope): [IRDecl | nul
     if (name === 'attempt') return lowerAttempt(values, pos, scope);
     if (name === 'do') { compileError('do', 'do requires the interpreter — use #preprocess for compile-time evaluation'); }
     if (name === 'bind') { compileError('bind', 'bind requires the interpreter — rebinding is a runtime-only operation'); }
-    if (name === 'reduce') { compileError('reduce', 'reduce requires the interpreter — use #preprocess for compile-time evaluation'); }
 
     // Function/builtin call — lower as expression statement
     const [expr, nextPos] = lowerExpr(values, pos, scope);
@@ -395,7 +394,7 @@ function lowerAtom(values: KtgValue[], pos: number, scope: Scope): [IRExpr, numb
 
       // Tier 3 homoiconic words — special lowering
       if (name === 'compose') return lowerCompose(values, pos, scope);
-      if (name === 'reduce') return compileError('reduce', 'reduce requires the interpreter — use #preprocess for compile-time evaluation'), [{ tag: 'none', type: 'none!' } as any, pos + 1];
+      if (name === 'reduce') return lowerReduce(values, pos, scope);
       if (name === 'do') return compileError('do', 'do requires the interpreter — use #preprocess for compile-time evaluation'), [{ tag: 'none', type: 'none!' } as any, pos + 1];
       if (name === 'bind') return compileError('bind', 'bind requires the interpreter — rebinding is a runtime-only operation'), [{ tag: 'none', type: 'none!' } as any, pos + 1];
       if (name === 'words-of') return lowerWordsOf(values, pos, scope);

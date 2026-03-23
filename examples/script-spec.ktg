@@ -1242,7 +1242,7 @@ do [print "I was data, now I am running"]
 target: "Alice"
 code: compose [greet (target) 42]       ; => [greet "Alice" 42]
 
-; reduce [INTERPRETER-ONLY]
+; reduce — evaluate every expression, return results as a block
 reduce [1 + 2 3 * 4 "hello"]           ; => [3 12 "hello"]
 
 ; bind — rebind words to a context [INTERPRETER-ONLY]
@@ -1451,15 +1451,14 @@ loop [for [item] in inv/by-price [
 ; Shield - $18.00
 ; Sword - $25.00
 
-; --- Data Processing ---
-; Parsing strings, building objects, sorting by computed value.
+; --- Data Processing with Parse ---
+; Parse extracts, code processes. No interleaving.
+; collect/keep returns a block, then we build objects.
 
-raw: [
-  "Alice,90,85,92"
-  "Bob,78,82,88"
-  "Charlie,95,91,87"
-  "Diana,88,94,96"
-]
+raw: {Alice,90,85,92
+Bob,78,82,88
+Charlie,95,91,87
+Diana,88,94,96}
 
 StudentRecord: object [
   name [string!]
@@ -1471,19 +1470,28 @@ StudentRecord: object [
   ]
 ]
 
+; Step 1: Parse — extract rows
+rows: parse raw [collect [
+  some [keep to ["\n" | end] opt "\n"]
+]]
+
+; Step 2: Process — build objects
 students: []
-loop [for [row] in raw [
-  parts: split row ","
-  s: make StudentRecord [
-    name: first parts
-    scores: []
-  ]
-  append s/scores to integer! (pick parts 2)
-  append s/scores to integer! (pick parts 3)
-  append s/scores to integer! (pick parts 4)
+loop [for [row] in rows [
+  fields: parse row [collect [
+    keep to "," skip
+    keep to "," skip
+    keep to "," skip
+    keep to end
+  ]]
+  s: make StudentRecord [name: first fields scores: []]
+  append s/scores to integer! (pick fields 2)
+  append s/scores to integer! (pick fields 3)
+  append s/scores to integer! (pick fields 4)
   append students s
 ]]
 
+; Step 3: Rank
 ranked: sort/by students function [s] [negate s/average]
 loop [for [s] in ranked [
   print rejoin ["  " s/name " — avg: " round s/average]

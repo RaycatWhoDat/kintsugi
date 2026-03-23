@@ -9,10 +9,20 @@ export function register(native: RegisterNativeFn, _op: RegisterOpFn, _ctx: KtgC
   native('parse', 2, (args, ev, callerCtx) => {
     const [input, rules] = args;
     if (rules.type !== 'block!') throw new KtgError('type', 'parse expects a rule block');
+    let ok: boolean;
     if (input.type === 'string!') {
-      return { type: 'logic!', value: parseString(input.value, rules, callerCtx, ev) };
+      ok = parseString(input.value, rules, callerCtx, ev);
+    } else if (input.type === 'block!') {
+      ok = parseBlock(input, rules, callerCtx, ev);
+    } else {
+      throw new KtgError('type', 'parse expects a block or string');
     }
-    if (input.type !== 'block!') throw new KtgError('type', 'parse expects a block or string');
-    return { type: 'logic!', value: parseBlock(input, rules, callerCtx, ev) };
+    // If top-level collect was used, return the collected block
+    const collected = callerCtx.get('__parse_collect_result');
+    if (collected && collected.type === 'block!') {
+      callerCtx.unset('__parse_collect_result');
+      return collected;
+    }
+    return { type: 'logic!', value: ok };
   });
 }

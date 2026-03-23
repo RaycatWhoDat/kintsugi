@@ -1,11 +1,4 @@
-Kintsugi [
-  name: 'math
-  exports: [
-    clamp lerp sign distance wrap deadzone remap
-    smoothstep smootherstep fraction
-    normalize magnitude rotate2d
-  ]
-]
+Kintsugi [name: 'math]
 
 ; --- Clamping & interpolation ---
 

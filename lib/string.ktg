@@ -1,13 +1,4 @@
-Kintsugi [
-  name: 'string
-  exports: [
-    starts-with? ends-with? contains?
-    pad-left pad-right
-    repeat-string
-    char-at
-    reverse-string
-  ]
-]
+Kintsugi [name: 'string]
 
 ; --- Predicates ---
 

@@ -115,8 +115,10 @@ describe('lower — Tier 3 homoiconic words', () => {
     }
   });
 
-  test('reduce is a compile error', () => {
-    expect(() => lower('x: reduce [1 + 2 3 + 4]')).toThrow('interpreter');
+  test('reduce lowers to block of expressions', () => {
+    const mod = lower('x: reduce [1 + 2 3 + 4]');
+    const decl = mod.declarations[0] as any;
+    expect(decl.value.tag).toBe('block');
   });
 
   test('do is a compile error', () => {

@@ -175,12 +175,6 @@ function matchOneRule(
   }
 
   // Paren: side effect
-  if (rule.type === 'paren!') {
-    const inner: KtgBlock = { type: 'block!', values: rule.values };
-    evaluator.evalBlock(inner, ctx);
-    return [iPos, rPos + 1];
-  }
-
   // --- Block-only rules ---
   if (input.mode === 'block') {
     // Lit-word: match literal word in input
@@ -289,7 +283,7 @@ function matchOneRule(
 
       case 'to': {
         rPos++;
-        for (let scan = iPos; scan < len; scan++) {
+        for (let scan = iPos; scan <= len; scan++) {
           const r = matchOneRule(input, scan, rules, rPos, ctx, evaluator, collectStack);
           if (r !== null) return [scan, rPos + 1];
         }
@@ -346,12 +340,29 @@ function matchOneRule(
         return [r, rPos + 1];
       }
 
+      case 'context': {
+        rPos++;
+        if (rPos >= rules.length || rules[rPos].type !== 'block!') return null;
+        const recordRule = rules[rPos] as KtgBlock;
+        const recordCtx = new KtgContext(ctx);
+        // Push a dead bucket so any keep inside context doesn't leak to outer collect
+        const deadBucket: KtgValue[] = [];
+        collectStack.push(deadBucket);
+        const r = matchSequence(input, iPos, recordRule.values, recordCtx, evaluator, collectStack);
+        collectStack.pop();
+        if (r === null) return null;
+        if (collectStack.length > 0) {
+          collectStack[collectStack.length - 1].push({ type: 'context!', context: recordCtx });
+        }
+        return [r, rPos + 1];
+      }
+
       case 'keep': {
         rPos++;
         const startPos = iPos;
         const r = matchOneRule(input, iPos, rules, rPos, ctx, evaluator, collectStack);
         if (r === null) return null;
-        if (collectStack.length > 0) {
+        if (collectStack.length > 0 && r[0] > startPos) {
           const bucket = collectStack[collectStack.length - 1];
           if (input.mode === 'block') {
             for (let k = startPos; k < r[0]; k++) {
@@ -361,7 +372,7 @@ function matchOneRule(
             bucket.push({ type: 'string!', value: input.str.slice(startPos, r[0]) });
           }
         }
-        return [r[0], rPos + 1];
+        return [r[0], r[1]];
       }
 
       default: {

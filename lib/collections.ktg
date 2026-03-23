@@ -1,7 +1,4 @@
-Kintsugi [
-  name: 'collections
-  exports: [flatten flatten-deep zip reverse-block unique shuffle find-where]
-]
+Kintsugi [name: 'collections]
 
 ; --- Flatten ---
 ; Merge nested blocks into a single block.
