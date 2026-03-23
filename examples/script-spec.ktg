@@ -1372,7 +1372,9 @@ Kintsugi [
 ; PUTTING IT ALL TOGETHER
 ; ============================================================
 
-; --- Quicksort ---
+; --- Quicksort (manual) ---
+; Note: Kintsugi has a built-in sort. This shows off
+; loop/partition and recursion.
 
 qsort: function [blk] [
   if (length? blk) <= 1 [return blk]
@@ -1390,6 +1392,8 @@ unsorted: [3 1 4 1 5 9 2 6 5 3]
 sorted: qsort unsorted
 probe sorted                            ; 1 1 2 3 3 4 5 5 6 9
 
+; Or just: sort [3 1 4 1 5 9 2 6 5 3]
+
 ; --- Fibonacci ---
 
 fib: function [n] [
@@ -1405,3 +1409,115 @@ fib: function [n] [
 ]
 
 probe fib 10                            ; 0 1 1 2 3 5 8 13 21 34
+
+; --- Game Inventory ---
+; Objects, money!, sort/by, methods.
+
+Item: object [
+  name [string!]
+  price [money!]
+  weight [float!] @default 0.0
+]
+
+Inventory: object [
+  items [block!] @default []
+
+  add-item: function [item [item!]] [
+    append self/items item
+  ]
+
+  total-value: does [
+    total: $0.00
+    loop [for [item] in self/items [total: total + item/price]]
+    total
+  ]
+
+  by-price: does [
+    sort/by self/items function [i] [i/price]
+  ]
+]
+
+inv: make Inventory []
+inv/add-item make-item "Sword" $25.00 3.5
+inv/add-item make-item "Potion" $5.50 0.5
+inv/add-item make-item "Shield" $18.00 5.0
+
+print rejoin ["Total: " inv/total-value] ; Total: $48.50
+
+loop [for [item] in inv/by-price [
+  print rejoin ["  " item/name " - " item/price]
+]]
+; Potion - $5.50
+; Shield - $18.00
+; Sword - $25.00
+
+; --- Data Processing ---
+; Parsing strings, building objects, sorting by computed value.
+
+raw: [
+  "Alice,90,85,92"
+  "Bob,78,82,88"
+  "Charlie,95,91,87"
+  "Diana,88,94,96"
+]
+
+StudentRecord: object [
+  name [string!]
+  scores [block!] @default []
+  average: does [
+    total: 0
+    loop [for [s] in self/scores [total: total + s]]
+    total / (length? self/scores)
+  ]
+]
+
+students: []
+loop [for [row] in raw [
+  parts: split row ","
+  s: make StudentRecord [
+    name: first parts
+    scores: []
+  ]
+  append s/scores to integer! (pick parts 2)
+  append s/scores to integer! (pick parts 3)
+  append s/scores to integer! (pick parts 4)
+  append students s
+]]
+
+ranked: sort/by students function [s] [negate s/average]
+loop [for [s] in ranked [
+  print rejoin ["  " s/name " — avg: " round s/average]
+]]
+; Diana — avg: 93
+; Charlie — avg: 91
+; Alice — avg: 89
+; Bob — avg: 83
+
+; --- State Machine ---
+; Objects with match for state transitions.
+
+TrafficLight: object [
+  state [string!] @default "red"
+  timer [integer!] @default 0
+
+  advance: does [
+    match self/state [
+      ["red"]    [self/state: "green"  self/timer: 30]
+      ["green"]  [self/state: "yellow" self/timer: 5]
+      ["yellow"] [self/state: "red"    self/timer: 45]
+    ]
+  ]
+
+  display: does [
+    rejoin ["[" (uppercase self/state) "] " self/timer "s"]
+  ]
+]
+
+light: make TrafficLight []
+print light/display                     ; [RED] 0s
+light/advance
+print light/display                     ; [GREEN] 30s
+light/advance
+print light/display                     ; [YELLOW] 5s
+light/advance
+print light/display                     ; [RED] 45s
