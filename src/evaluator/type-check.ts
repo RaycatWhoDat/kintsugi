@@ -1,6 +1,7 @@
 import { KtgContext } from './context';
-import { KtgValue, KtgBlock, KtgError, isTruthy } from './values';
+import { KtgValue, KtgBlock, KtgError, isTruthy, valueToString } from './values';
 import type { Evaluator } from './evaluator';
+import { parseBlock } from './parse';
 
 export const TYPE_UNIONS: Record<string, string[]> = {
   'number!': ['integer!', 'float!'],
@@ -62,6 +63,33 @@ function matchesContextFields(value: KtgValue, fields: { name: string; type: str
   return true;
 }
 
+// Identify which field failed on a context for better error messages
+function findFieldMismatch(value: KtgValue, fields: { name: string; type: string }[], ctx: KtgContext, ev: Evaluator): string | null {
+  if (value.type !== 'context!') return null;
+  const ctxVal = (value as any).context as KtgContext;
+  for (const field of fields) {
+    const fieldVal = ctxVal.get(field.name);
+    if (fieldVal === undefined) return `missing field '${field.name}' [${field.type}]`;
+    if (!matchesType(fieldVal, field.type, ctx, ev)) {
+      return `'${field.name}' expects ${field.type}, got ${fieldVal.type} (${valueToString(fieldVal)})`;
+    }
+  }
+  return null;
+}
+
+// Format a type rule into a readable string (1-2 levels)
+export function formatTypeRule(rule: KtgBlock): string {
+  const parts: string[] = [];
+  for (const v of rule.values) {
+    if (v.type === 'lit-word!') parts.push(`'${v.name}`);
+    else if (v.type === 'word!') parts.push((v as any).name);
+    else if (v.type === 'op!' && (v as any).symbol === '|') parts.push('|');
+    else if (v.type === 'block!') parts.push(`[${(v as any).values.map((x: KtgValue) => valueToString(x)).join(' ')}]`);
+    else parts.push(valueToString(v));
+  }
+  return parts.join(' ');
+}
+
 // Returns true if valid, throws KtgError with specific message on guard failure
 export function validateCustomType(value: KtgValue, resolved: any, ctx: KtgContext, ev: Evaluator, paramName?: string, constraint?: string): boolean {
   // Try context field validation if the rule looks like field specs and value is a context
@@ -83,7 +111,6 @@ export function validateCustomType(value: KtgValue, resolved: any, ctx: KtgConte
   }
 
   // Fall back to parseBlock for blocks and other values
-  const { parseBlock } = require('./parse');
   const input = value.type === 'block!'
     ? value
     : { type: 'block!' as const, values: [value] };
@@ -120,7 +147,17 @@ export function checkType(value: KtgValue, constraint: string, paramName: string
     const resolved = ctx.get(constraint);
     if (resolved && resolved.type === 'type!' && resolved.rule && evaluator) {
       if (!validateCustomType(value, resolved, ctx, evaluator, paramName, constraint)) {
-        throw new KtgError('type', `${paramName} expects ${constraint}, got ${value.type}`);
+        const err = new KtgError('type', `${paramName} expects ${constraint}, got ${value.type}`);
+        err.addDetail(`${constraint} = ${formatTypeRule(resolved.rule)}${resolved.enum ? '  (enum, case-sensitive)' : ''}`);
+        // For context values, identify which field failed
+        if (value.type === 'context!') {
+          const fields = parseFieldSpecs(resolved.rule);
+          if (fields) {
+            const mismatch = findFieldMismatch(value, fields, ctx, evaluator);
+            if (mismatch) err.addDetail(mismatch);
+          }
+        }
+        throw err;
       }
     } else {
       throw new KtgError('type', `${paramName} expects ${constraint}, got ${value.type}`);

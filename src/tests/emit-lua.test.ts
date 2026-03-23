@@ -124,9 +124,8 @@ describe('Lua emission — Tier 3 words', () => {
     expect(lua).toContain('local x = {1, (2 + 3), 4}');
   });
 
-  test('reduce lowers to block literal', () => {
-    const lua = compile('x: reduce [1 + 2 3 + 4]');
-    expect(lua).toContain('{(1 + 2), (3 + 4)}');
+  test('reduce is a compile error', () => {
+    expect(() => compile('x: reduce [1 + 2]')).toThrow('interpreter');
   });
 
   test('all desugars to and chain', () => {
@@ -210,5 +209,92 @@ describe('Lua emission — complete program', () => {
     expect(lua).toContain('return 1');
     expect(lua).toContain('return (n * fact((n - 1)))');
     expect(lua).toContain('print(fact(10))');
+  });
+});
+
+describe('Lua emission — object model', () => {
+  test('object with fields emits runtime', () => {
+    const lua = compile(`
+      Person: object [
+        name [string!]
+        age [integer!] @default 0
+      ]
+    `);
+    expect(lua).toContain('Runtime: object model');
+    expect(lua).toContain('__ktg_is_object');
+    expect(lua).toContain('__obj.name = nil');
+    expect(lua).toContain('__obj.age = 0');
+    expect(lua).toContain('__obj.self = __obj');
+  });
+
+  test('object with methods emits closures', () => {
+    const lua = compile(`
+      Person: object [
+        name [string!]
+        greet: does [
+          print join "Hello, " self/name
+        ]
+      ]
+    `);
+    expect(lua).toContain('__obj.greet = function()');
+    expect(lua).toContain('local self = __obj.self');
+  });
+
+  test('make with object emits runtime', () => {
+    const lua = compile(`
+      Person: object [
+        name [string!]
+        age [integer!] @default 0
+      ]
+      p: make Person [name: "Alice" age: 30]
+    `);
+    expect(lua).toContain('__make(Person');
+    expect(lua).toContain('__ktg_make_object');
+  });
+
+  test('object field names in metadata', () => {
+    const lua = compile(`
+      Point: object [
+        x [integer!]
+        y [integer!]
+      ]
+    `);
+    expect(lua).toContain('__ktg_field_names');
+    expect(lua).toContain('"x"');
+    expect(lua).toContain('"y"');
+  });
+
+  test('object method accessing self fields', () => {
+    const lua = compile(`
+      Person: object [
+        name [string!]
+        age [integer!] @default 0
+        greet: does [
+          print join "Hello, I am " self/name
+        ]
+        birthday: function [] [
+          self/age: self/age + 1
+        ]
+      ]
+    `);
+    // Method body should reference self
+    expect(lua).toContain('self.name');
+    expect(lua).toContain('self.age');
+  });
+
+  test('complete object lifecycle', () => {
+    const lua = compile(`
+      Counter: object [
+        count [integer!] @default 0
+        inc: does [
+          self/count: self/count + 1
+        ]
+      ]
+      c: make Counter []
+      c/inc
+    `);
+    expect(lua).toContain('__ktg_object');
+    expect(lua).toContain('__make(Counter');
+    expect(lua).toContain('c.inc');
   });
 });

@@ -15,20 +15,7 @@ if (args.length > 0) {
 
 function createEvaluator(): Evaluator {
   const evaluator = new Evaluator();
-
-  const originalPush = evaluator.output.push.bind(evaluator.output);
-  evaluator.output = new Proxy(evaluator.output, {
-    get(target, prop) {
-      if (prop === 'push') {
-        return (...items: string[]) => {
-          for (const item of items) console.log(item);
-          return originalPush(...items);
-        };
-      }
-      return (target as any)[prop];
-    },
-  });
-
+  evaluator.onOutput = (line) => console.log(line);
   return evaluator;
 }
 
@@ -47,8 +34,8 @@ function runFile(path: string): void {
   try {
     evaluator.evalString(source);
   } catch (e: any) {
-    if (e.name === 'KtgError') {
-      console.error(`Error [${e.errorName}]: ${e.message}`);
+    if (e instanceof KtgError) {
+      console.error(e.format());
       process.exit(1);
     }
     throw e;
@@ -126,9 +113,7 @@ function runRepl(): void {
       }
     } catch (e: any) {
       if (e instanceof KtgError) {
-        console.error(`Error [${e.errorName}]: ${e.message}`);
-      } else if (e.name === 'KtgError') {
-        console.error(`Error [${e.errorName}]: ${e.message}`);
+        console.error(e.format());
       } else {
         console.error(`Internal error: ${e.message}`);
       }

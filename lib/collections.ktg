@@ -1,0 +1,111 @@
+Kintsugi [
+  name: 'collections
+  exports: [flatten flatten-deep zip reverse-block unique shuffle find-where]
+]
+
+; --- Flatten ---
+; Merge nested blocks into a single block.
+; flatten [[1 2] [3 4] [5]]  => [1 2 3 4 5]
+; Only flattens one level deep.
+
+flatten-deep: function [data [block!]] [
+  result: []
+  loop [for [sub] in data [
+    either block? sub [
+      flat-sub: flatten-deep sub
+      loop [for [item] in flat-sub [append result item]]
+    ] [
+      append result sub
+    ]
+  ]]
+  result
+]
+
+flatten: function [data [block!] /deep] [
+  either deep [
+    flatten-deep data
+  ] [
+    result: []
+    loop [for [sub] in data [
+      either block? sub [
+        loop [for [item] in sub [append result item]]
+      ] [
+        append result sub
+      ]
+    ]]
+    result
+  ]
+]
+
+; --- Zip ---
+; Interleave two blocks into pairs.
+; zip [1 2 3] ["a" "b" "c"]  => [[1 "a"] [2 "b"] [3 "c"]]
+; Stops at the shorter block.
+
+zip: function [a [block!] b [block!]] [
+  len: min length? a length? b
+  if len <= 0 [return []]
+  result: []
+  loop [for [i] from 1 to len [
+    pair: []
+    append pair pick a i
+    append pair pick b i
+    append result pair
+  ]]
+  result
+]
+
+; --- Reverse ---
+; Return a new block with elements in reverse order.
+; reverse-block [1 2 3]  => [3 2 1]
+
+reverse-block: function [data [block!]] [
+  len: length? data
+  if len <= 0 [return []]
+  result: []
+  loop [for [i] from len to 1 [append result pick data i]]
+  result
+]
+
+; --- Unique ---
+; Return a new block with duplicates removed.
+; Preserves first occurrence order.
+; unique [1 2 1 3 2 4]  => [1 2 3 4]
+
+unique: function [data [block!]] [
+  result: []
+  loop [for [item] in data [
+    unless has? result item [append result item]
+  ]]
+  result
+]
+
+; --- Shuffle ---
+; Fisher-Yates shuffle. Returns a new shuffled block.
+; shuffle [1 2 3 4 5]  => [3 1 5 2 4] (random)
+
+shuffle: function [data [block!]] [
+  result: copy data
+  len: length? result
+  if len <= 1 [return result]
+  loop [for [i] from len to 2 [
+    j: (random i) + 1
+    temp: pick result i
+    ; swap i and j
+    insert (remove result i) (pick result j) i
+    insert (remove result j) temp j
+  ]]
+  result
+]
+
+; --- Find-where ---
+; Find first element matching a predicate function.
+; Returns the element or none.
+; find-where [1 2 3 4] function [x] [x > 2]  => 3
+
+find-where: function [data [block!] pred [function!]] [
+  loop [for [item] in data [
+    if pred item [return item]
+  ]]
+  none
+]

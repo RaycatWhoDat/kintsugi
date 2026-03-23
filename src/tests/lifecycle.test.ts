@@ -49,7 +49,7 @@ describe('@enter / @exit', () => {
       ]
     `);
     expect(ev.output).toEqual(['enter', 'exit']);
-    expect(ev.evalString("select result 'ok")).toEqual({ type: 'logic!', value: false });
+    expect(ev.evalString('result/ok')).toEqual({ type: 'logic!', value: false });
   });
 
   test('@exit sees bindings from body', () => {

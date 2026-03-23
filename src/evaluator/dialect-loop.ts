@@ -1,7 +1,7 @@
 import { KtgContext } from './context';
 import {
   KtgValue, KtgBlock,
-  NONE, KtgError, BreakSignal,
+  NONE, KtgError, BreakSignal, isTruthy,
   numVal, valueToString,
 } from './values';
 import type { Evaluator } from './evaluator';
@@ -170,7 +170,7 @@ function executeLoop(
         continue;
       }
 
-      // Bind iteration variables from tuple
+      // Bind iteration variables in parent (body needs full read/write access)
       for (let j = 0; j < iterVars.length; j++) {
         parentCtx.set(iterVars[j], tuple[j] ?? NONE);
       }
@@ -183,7 +183,7 @@ function executeLoop(
       // Check guard
       if (config.guard) {
         const guardResult = evaluator.evalBlock(config.guard, parentCtx);
-        const { isTruthy } = require('./values');
+
         if (!isTruthy(guardResult)) continue;
       }
 
@@ -200,7 +200,7 @@ function executeLoop(
       } else if (refinement === 'fold') {
         accumulator = result;
       } else if (refinement === 'partition') {
-        const { isTruthy } = require('./values');
+
         const iterValue = tuple[0] ?? NONE;
         if (isTruthy(result)) {
           truthyBucket.push(iterValue);
@@ -210,6 +210,15 @@ function executeLoop(
       }
     }
   };
+
+  // All loop vars to clean up after iteration (don't leak to parent)
+  const allLoopVars = isFold ? config.vars : iterVars;
+
+  // Save any pre-existing values so we can restore them
+  const saved = new Map<string, KtgValue | undefined>();
+  for (const v of allLoopVars) {
+    saved.set(v, parentCtx.has(v) ? parentCtx.get(v) : undefined);
+  }
 
   try {
     if (config.source === 'range') {
@@ -238,6 +247,10 @@ function executeLoop(
       iterate(tuples);
     }
   } catch (e) {
+    // Clean up loop vars before returning
+    for (const [v, prev] of saved) {
+      if (prev === undefined) parentCtx.unset(v); else parentCtx.set(v, prev);
+    }
     if (e instanceof BreakSignal) {
       if (refinement === 'collect') return { type: 'block!', values: collected };
       if (refinement === 'fold') return accumulator ?? NONE;
@@ -248,6 +261,11 @@ function executeLoop(
       return e.value;
     }
     throw e;
+  }
+
+  // Clean up loop vars — don't leak to parent
+  for (const [v, prev] of saved) {
+    if (prev === undefined) parentCtx.unset(v); else parentCtx.set(v, prev);
   }
 
   if (refinement === 'collect') return { type: 'block!', values: collected };

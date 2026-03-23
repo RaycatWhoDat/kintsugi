@@ -6,12 +6,13 @@ const ESCAPE_MAP = { n: '\n', t: '\t' };
 
 export function* createLexerFromString(input: string): Generator<Token, null, unknown> {
   let currentPos = 0;
+  let currentLine = 1;
 
   // ================ 
   
   const peek = () => input[currentPos];
   const peekNext = () => input[currentPos + 1];
-  const advance = () => input[currentPos++];
+  const advance = () => { const ch = input[currentPos++]; if (ch === '\n') currentLine++; return ch; };
   const isAtEnd = () => currentPos >= input.length;
   const isWhitespace = (char: string) => typeof char === 'string' && /\s/.test(char);
   const isDigit = (char: string) => typeof char === 'string' && /\d/.test(char);
@@ -19,6 +20,7 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
   const isWordChar = (char: string) => typeof char === 'string' && /[a-z0-9_?!~-]/i.test(char);
   const isFileChar = (char: string) => typeof char === 'string' && /[a-z0-9._\/\\-]/i.test(char);
   const isUrlChar = (char: string) => typeof char === 'string' && !isWhitespace(char) && !'[]()'.includes(char);
+  const tok = (type: Token['type'], value: string, line?: number): Token => ({ type, value, line: line ?? currentLine });
   
   const consumeWhile = (predicate: Predicate): string => {
     let value = '';
@@ -54,7 +56,8 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
     return value;
   }
 
-  const consumeWordOrPath = (prefix?: "'" | ':'): Token => {
+  const consumeWordOrPath = (prefix?: "'" | ':', startLine?: number): Token => {
+    startLine = startLine ?? currentLine;
     let value = consumeWhile(isWordChar);
 
     // URL: scheme://rest
@@ -67,7 +70,7 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
         value += advance(); // first /
         value += advance(); // second /
         value += consumeWhile(isUrlChar);
-        return { type: TOKEN_TYPES.URL, value };
+        return tok(TOKEN_TYPES.URL, value, startLine);
       }
       // Not a URL — backtrack
       currentPos = savedPos;
@@ -87,7 +90,7 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
         value += advance(); // @
         const isDomainChar = (char: string) => typeof char === 'string' && /[a-z0-9._-]/i.test(char);
         value += consumeWhile(isDomainChar);
-        return { type: TOKEN_TYPES.EMAIL, value };
+        return tok(TOKEN_TYPES.EMAIL, value, startLine);
       }
       // Not an email — backtrack
       currentPos = savedPos;
@@ -100,10 +103,7 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
 
     if (peek() === ':') {
       advance();
-      return {
-        type: TOKEN_TYPES[`SET_${isWordOrPath}`],
-        value
-      };
+      return tok(TOKEN_TYPES[`SET_${isWordOrPath}`] as any, value, startLine);
     }
 
     let type = TOKEN_TYPES[isWordOrPath];
@@ -116,13 +116,14 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
       if (value === 'none') type = TOKEN_TYPES.NONE;
     }
 
-    return { type, value };
+    return tok(type, value, startLine);
   }
   
   // ================ 
 
   // While we're not at the end...
   while (!isAtEnd()) {
+    const startLine = currentLine;
     const currentChar = peek();
 
     // Whitespace 
@@ -140,29 +141,29 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
     // Blocks
     if (currentChar === '[' || currentChar === ']') {
       advance();
-      yield { type: TOKEN_TYPES.BLOCK, value: currentChar };
+      yield tok(TOKEN_TYPES.BLOCK, currentChar, startLine);
       continue;
     }
 
     // Parens
     if (currentChar === '(' || currentChar === ')') {
       advance();
-      yield { type: TOKEN_TYPES.PAREN, value: currentChar };
+      yield tok(TOKEN_TYPES.PAREN, currentChar, startLine);
       continue;
     }
 
     // Meta-word (@enter, @exit, @add, etc.)
     if (currentChar === '@') {
       advance();
-      const { value } = consumeWordOrPath();
-      yield { type: TOKEN_TYPES.META_WORD, value };
+      const { value } = consumeWordOrPath(undefined, startLine);
+      yield tok(TOKEN_TYPES.META_WORD, value, startLine);
       continue;
     }
 
     if (currentChar === '#') {
       advance();
 
-      const token: Token = { type: TOKEN_TYPES.STUB, value: '' };
+      const token: Token = { type: TOKEN_TYPES.STUB, value: '', line: startLine };
 
       if (peek() === '[') {
         // #[expr] — inline preprocess
@@ -182,20 +183,19 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
     // Words and paths
     if (currentChar === "'" || currentChar === ':') {
       advance(); // skip prefix
-      yield consumeWordOrPath(currentChar);
+      yield consumeWordOrPath(currentChar, startLine);
       continue;
     }
 
     if (isAlpha(currentChar) || currentChar === '_') {
-      yield consumeWordOrPath();
+      yield consumeWordOrPath(undefined, startLine);
       continue;
     }
 
     // Strings
     if (currentChar === '"' || currentChar === '{') {
       const value = currentChar === '{' ? consumeUntil('}') : consumeUntil('"');
-      const type = value.length === 1 ? TOKEN_TYPES.CHAR : TOKEN_TYPES.STRING;
-      yield { type, value };
+      yield tok(TOKEN_TYPES.STRING, value, startLine);
       continue;
     }
 
@@ -208,29 +208,29 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
       // Time: 14:30 or 14:30:00
       if (peek() === ':' && isDigit(peekNext())) {
         value += consumeAllComponents(':', isDigit, 2);
-        yield { type: TOKEN_TYPES.TIME, value };
+        yield tok(TOKEN_TYPES.TIME, value, startLine);
         continue;
       }
 
       if (peek() === 'x' && isDigit(peekNext())) {
         value += consumeAllComponents('x', isDigit, 1);
-        yield { type: TOKEN_TYPES.PAIR, value };
+        yield tok(TOKEN_TYPES.PAIR, value, startLine);
         continue;
       }
 
       if (peek() === '-' && isDigit(peekNext())) {
         value += consumeAllComponents('-', isDigit, 2);
-        yield { type: TOKEN_TYPES.DATE, value };
+        yield tok(TOKEN_TYPES.DATE, value, startLine);
         continue;
       }
  
       const components = consumeAllComponents('.', isDigit);
       if (!components) {
-        yield { type: TOKEN_TYPES.INTEGER, value };
+        yield tok(TOKEN_TYPES.INTEGER, value, startLine);
       } else {
         value += components;
         const dotCount = (components.match(/\./g) || []).length;
-        yield { type: dotCount === 1 ? TOKEN_TYPES.FLOAT : TOKEN_TYPES.TUPLE, value };
+        yield tok(dotCount === 1 ? TOKEN_TYPES.FLOAT : TOKEN_TYPES.TUPLE, value, startLine);
       }
       continue;
     }
@@ -243,7 +243,7 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
         ? consumeUntil('"')
         : consumeWhile(isFileChar);
       
-      yield { type: TOKEN_TYPES.FILE, value };
+      yield tok(TOKEN_TYPES.FILE, value, startLine);
       continue;
     }
 
@@ -255,7 +255,7 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
         value += advance(); // the dot
         value += consumeWhile(isDigit);
       }
-      yield { type: TOKEN_TYPES.MONEY, value };
+      yield tok(TOKEN_TYPES.MONEY, value, startLine);
       continue;
     }
 
@@ -266,11 +266,12 @@ export function* createLexerFromString(input: string): Generator<Token, null, un
       if (value === '>' && peek() === '=') value += advance();
       if (value === '<' && peek() === '>') value += advance();
       
-      yield { type: TOKEN_TYPES.OPERATOR, value };
+      yield tok(TOKEN_TYPES.OPERATOR, value, startLine);
       continue;
     }
     
-    // Fallback for anything we didn't catch
+    // Fallback — emit stub for unrecognized characters
+    yield tok(TOKEN_TYPES.STUB, source[pos], startLine);
     advance();
   }
   return null;

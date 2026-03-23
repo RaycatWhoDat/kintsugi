@@ -8,35 +8,26 @@ import { readFileSync } from 'fs';
 import { parseString } from '@/helpers';
 import { astToValue } from './values';
 
-interface ModuleCache {
-  contexts: Map<string, KtgValue>;
-  headers: Map<string, KtgValue>;
-}
-
-const globalCache: ModuleCache = {
-  contexts: new Map(),
-  headers: new Map(),
-};
-
-const loading: Set<string> = new Set();
-
 export function requireModule(
   filePath: string,
   evaluator: Evaluator,
   callerCtx: KtgContext,
   headerOnly: boolean,
 ): KtgValue {
+  const cache = evaluator.moduleCache;
+  const loading = evaluator.moduleLoading;
+
   // Circular dependency check
   if (!headerOnly && loading.has(filePath)) {
     throw new KtgError('require', `Circular dependency detected: ${filePath}`);
   }
 
   // Check cache
-  if (headerOnly && globalCache.headers.has(filePath)) {
-    return globalCache.headers.get(filePath)!;
+  if (headerOnly && cache.headers.has(filePath)) {
+    return cache.headers.get(filePath)!;
   }
-  if (!headerOnly && globalCache.contexts.has(filePath)) {
-    return globalCache.contexts.get(filePath)!;
+  if (!headerOnly && cache.contexts.has(filePath)) {
+    return cache.contexts.get(filePath)!;
   }
 
   // Read and parse file
@@ -67,7 +58,7 @@ export function requireModule(
 
   // Cache header result
   const headerResult = header ? header : NONE;
-  globalCache.headers.set(filePath, headerResult);
+  cache.headers.set(filePath, headerResult);
 
   if (headerOnly) {
     return headerResult;
@@ -110,7 +101,7 @@ export function requireModule(
       resultCtx = { type: 'context!', context: moduleCtx };
     }
 
-    globalCache.contexts.set(filePath, resultCtx);
+    cache.contexts.set(filePath, resultCtx);
     return resultCtx;
   } finally {
     loading.delete(filePath);
@@ -152,10 +143,9 @@ function parseHeader(header: KtgBlock): HeaderInfo {
           info.modules = [];
           for (const mv of val.values) {
             if (mv.type === 'file!') {
-              // Extract name from filename: %lib/math.ktg → math
               const name = mv.value
-                .replace(/^.*\//, '')  // strip path
-                .replace(/\.ktg$/, ''); // strip extension
+                .replace(/^.*\//, '')
+                .replace(/\.ktg$/, '');
               info.modules.push({ name, path: mv.value });
             }
           }
@@ -167,8 +157,8 @@ function parseHeader(header: KtgBlock): HeaderInfo {
   return info;
 }
 
-export function resetRequireCache(): void {
-  globalCache.contexts.clear();
-  globalCache.headers.clear();
-  loading.clear();
+export function resetRequireCache(evaluator: Evaluator): void {
+  evaluator.moduleCache.contexts.clear();
+  evaluator.moduleCache.headers.clear();
+  evaluator.moduleLoading.clear();
 }

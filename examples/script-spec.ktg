@@ -250,6 +250,131 @@ print counter                           ; 10
 
 
 ; ============================================================
+; GOTCHAS FOR C-STYLE DEVELOPERS
+; ============================================================
+; Kintsugi descends from REBOL, not C. Many things that look
+; familiar behave differently. Read this before you get bitten.
+;
+; --- No operator precedence ---
+; Everything evaluates left to right. 2 + 3 * 4 = 20, not 14.
+; Use parens to group: 2 + (3 * 4) = 14.
+2 + 3 * 4                               ; => 20
+2 + (3 * 4)                             ; => 14
+
+; --- Functions consume arguments greedily ---
+; No parens on calls. Functions eat N values from the stream.
+; f a b means "call f with a and b", not "f; then a; then b".
+; You cannot have optional positional arguments — functions
+; always consume their full arity.
+;
+;   add 1 2                ; calls add with 1 and 2
+;   add 1 add 2 3          ; calls add with 1 and (add 2 3) = 5
+
+; --- and/or do NOT short-circuit ---
+; Both sides are always evaluated because the evaluator must
+; consume the right operand to know where it ends.
+;   false and expensive-call    ; expensive-call RUNS
+; Use all/any for short-circuit:
+;   all [false expensive-call]  ; stops at false, never calls
+
+; --- append is for blocks only ---
+; append mutates blocks in place (like push). It does NOT
+; work on strings. Use join or rejoin to build strings.
+;   data: [1 2]
+;   append data 3               ; data is now [1 2 3]
+;   join "hello" " world"       ; => "hello world"
+;   rejoin ["a" "b" "c"]        ; => "abc"
+
+; --- Division returns integer when exact ---
+; 10 / 2 => 2 (integer!), 10 / 3 => 3.33 (float!).
+; If you always want float, use to float! first.
+10 / 2                                   ; => 2 (integer!)
+10 / 3                                   ; => 3.3333 (float!)
+
+; --- replace replaces ALL occurrences ---
+; Unlike C's strtok or JS's String.replace, Kintsugi's
+; replace is replace-all by default. Use /first for one.
+replace "aabaa" "a" "x"                 ; => "xxbxx"
+replace/first "aabaa" "a" "x"           ; => "xabaa"
+
+; --- Loop variables don't leak ---
+; for-variables are scoped to the loop body. After the loop
+; they are cleaned up. Use loop/fold or loop/collect to get
+; values out.
+;   loop [for [i] from 1 to 5 [i]]
+;   i                                   ; ERROR: i has no value
+
+; --- try returns a context, not a block ---
+; result: try [10 / 0]
+; result/ok                             ; => false
+; result/kind                           ; => 'math
+; result/message                        ; => "Division by zero"
+; Access fields via path, not select.
+
+; --- Equality is structural ---
+; [1 2 3] = [1 2 3] is true. Blocks, pairs, tuples, and
+; words are compared by value, not by reference.
+[1 2 3] = [1 2 3]                       ; => true
+100x200 = 100x200                       ; => true
+'hello = 'hello                         ; => true
+
+; --- Words are case-insensitive for equality ---
+; 'Hello = 'hello is true. All word types compare by name
+; regardless of case or word subtype (word!, lit-word!, etc.).
+; Use @type/enum for case-sensitive matching.
+'Hello = 'hello                          ; => true
+
+
+; ============================================================
+; GOTCHAS FOR REBOL/RED DEVELOPERS
+; ============================================================
+; Kintsugi is in the REBOL lineage but runs on JS/Lua, not
+; a custom VM. Some things had to change.
+;
+; --- Strings are immutable ---
+; No mutable string series. append does NOT work on strings.
+; Use join or rejoin instead:
+;   append "hello" " world"     ; ERROR
+;   join "hello" " world"       ; => "hello world"
+;
+; --- No char! type ---
+; Single characters are just string! values. "A" is a string,
+; not a char. codepoint and from-codepoint handle conversion.
+;
+; --- money! is cents-based, no currency ---
+; $19.99 stores as 1999 cents (integer). No multi-currency,
+; no ISO codes. Arithmetic is exact (no float drift).
+;
+; --- try returns a context!, not a block ---
+; result: try [10 / 0]
+; result/ok                     ; path access, not select
+; result/kind                   ; => 'math
+; In REBOL, try returns the error itself or the value.
+; Kintsugi wraps both in a result context.
+;
+; --- object is a dialect, not make object! ---
+; Kintsugi uses a prototype model with typed fields:
+;   Person: object [name [string!] age [integer!] @default 0]
+;   p: make Person [name: "Ray" age: 30]
+; Auto-generates person! type and make-person constructor.
+; Methods use self/field for access (not bare words).
+;
+; --- Loop variables are scoped ---
+; After loop [for [i] from 1 to 5 [...]], i is unset.
+; REBOL leaks loop vars to the parent. Kintsugi cleans up.
+; Use loop/fold or loop/collect to extract values.
+;
+; --- replace is replace-all by default ---
+; REBOL's replace also replaces all, so this is the same.
+; But /first is the refinement for single replacement
+; (REBOL doesn't have this).
+;
+; --- @type/enum for case-sensitive lit-word matching ---
+; Default @type lit-word matching is case-insensitive
+; (like REBOL). @type/enum makes it strict.
+
+
+; ============================================================
 ; FUNCTIONS
 ; ============================================================
 ; The spec block inside 'function' is a dialect. Words,
@@ -809,7 +934,7 @@ point/y                                 ; => 20
 point/x: 30
 point/x                                 ; => 30
 
-; bind rebinds words to a context
+; bind rebinds words to a context [INTERPRETER-ONLY]
 code: [x + y]
 bind code point
 do code                                 ; => 30
@@ -836,27 +961,6 @@ print p/greet                           ; Hi, I'm Ray and I'm 30 years old
 print p/name                            ; Ray
 print p/age                             ; 30
 
-; --- Mutation via set/upvalue ---
-; set-word writes to the local (function) context.
-; set/upvalue walks the parent chain and updates
-; the variable where it was originally defined.
-
-Counter: function [n] [
-  context/from [
-    increment: function [] [
-      set/upvalue 'n (n + 1)
-    ]
-    value: function [] [n]
-  ]
-]
-
-c: Counter 0
-c/increment
-c/increment
-c/increment
-print c/value                           ; 3
-
-
 ; ============================================================
 ; OBJECT DIALECT
 ; ============================================================
@@ -877,6 +981,12 @@ print c/value                           ; 3
 ; @default implies opt — the field accepts none! automatically.
 ; You CAN still write opt explicitly, but convention is to
 ; let @default handle it.
+;
+; Field types must be names, not inline expressions.
+; Define custom types first, then reference them:
+;   status!: @type/enum ['Active | 'Inactive]
+;   Thing: object [status [status!] ...]   ; OK
+;   Thing: object [status @type/enum [...]] ; WRONG — not a type block
 ;
 ; Everything after field declarations is evaluated as the
 ; prototype's body — typically method definitions.
@@ -1114,26 +1224,41 @@ length? data                            ; => 2
 first data                              ; => 'print (a word)
 second data                             ; => "Hello" (a string)
 
-; Execute data as code
+; *** INTERPRETER-ONLY ***
+; The following features require runtime code evaluation
+; and cannot be compiled. Using them means your code runs
+; only in the interpreter. For compiled targets, use
+; #preprocess to generate code at compile time instead.
+;
+; If you're building a Love2D or Playdate game, avoid these
+; in your game code. They're fine in build scripts, tools,
+; and REPL sessions.
+
+; do — execute data as code [INTERPRETER-ONLY]
 do [print "I was data, now I am running"]
 
-; Compose — build blocks from templates
-; Evaluates parens, leaves everything else as data.
+; compose on dynamic blocks [INTERPRETER-ONLY]
+; (compose on literal blocks compiles fine)
 target: "Alice"
 code: compose [greet (target) 42]       ; => [greet "Alice" 42]
 
-; Reduce — evaluate every expression, return results
+; reduce [INTERPRETER-ONLY]
 reduce [1 + 2 3 * 4 "hello"]           ; => [3 12 "hello"]
 
-; Construct word types programmatically
+; bind — rebind words to a context [INTERPRETER-ONLY]
+; (see Contexts & Binding section)
+
+; Generate code dynamically [INTERPRETER-ONLY]
+do compose [(to set-word! "greeting") "hello world"]
+print greeting                          ; hello world
+
+; *** END INTERPRETER-ONLY ***
+
+; Construct word types programmatically (compiles fine)
 to word! "hello"                        ; => word
 to set-word! "x"                        ; => set-word
 to lit-word! "name"                     ; => lit-word
 to meta-word! "add"                     ; => meta-word
-
-; Generate code dynamically
-do compose [(to set-word! "greeting") "hello world"]
-print greeting                          ; hello world
 
 
 ; ============================================================

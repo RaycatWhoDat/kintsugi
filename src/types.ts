@@ -51,12 +51,12 @@ export type ContainerType = ValueOf<typeof CONTAINER_TYPES>;
 export type AtomType = ValueOf<typeof ATOM_TYPES>;
 export type TokenType = Prettify<ContainerType | AtomType>;
 
-export type Token = { type: TokenType, value: string };
+export type Token = { type: TokenType, value: string, line?: number };
 export type Predicate = (...args: any[]) => boolean;
 
 // Parser
 
-export type AstContainer = { type: ContainerType; children: AstNode[] };
-export type AstAtom = { type: AtomType, value: string };
+export type AstContainer = { type: ContainerType; children: AstNode[]; line?: number };
+export type AstAtom = { type: AtomType, value: string, line?: number };
 export type AstNode = AstAtom | AstContainer;
 

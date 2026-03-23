@@ -115,32 +115,16 @@ describe('lower — Tier 3 homoiconic words', () => {
     }
   });
 
-  test('reduce evaluates expression groups', () => {
-    const mod = lower('x: reduce [1 + 2 3 + 4]');
-    const decl = mod.declarations[0] as IRVarDecl;
-    expect(decl.value.tag).toBe('block');
-    if (decl.value.tag === 'block') {
-      expect(decl.value.values).toHaveLength(2);
-      expect(decl.value.values[0].tag).toBe('binop'); // 1 + 2
-      expect(decl.value.values[1].tag).toBe('binop'); // 3 + 4
-    }
+  test('reduce is a compile error', () => {
+    expect(() => lower('x: reduce [1 + 2 3 + 4]')).toThrow('interpreter');
   });
 
   test('do is a compile error', () => {
-    expect(() => lower('do [1 + 2]')).toThrow();
+    expect(() => lower('do [1 + 2]')).toThrow('interpreter');
   });
 
-  test('bind is a no-op in statement position', () => {
-    const mod = lower('data: [1 2 3]\nbind data context [x: 10]\nprint first data');
-    // Should have 2 declarations: data assignment and print call
-    // bind is skipped entirely
-    expect(mod.declarations).toHaveLength(2);
-  });
-
-  test('bind returns block in expression position', () => {
-    const mod = lower('x: bind [1 2 3] context [a: 1]');
-    const decl = mod.declarations[0] as IRVarDecl;
-    expect(decl.value.tag).toBe('block');
+  test('bind is a compile error', () => {
+    expect(() => lower('bind [1 2] context [x: 1]')).toThrow('interpreter');
   });
 
   test('words-of on literal context produces string array', () => {
@@ -212,4 +196,36 @@ describe('lower — type predicates', () => {
       expect(decl.value.name).toBe('integer?');
     }
   });
+});
+
+describe('lower — objects', () => {
+  test('object lowers as builtin call with structured args', () => {
+    const mod = lower('P: object [name [string!] age [integer!] @default 0]');
+    const decl = mod.declarations[0] as IRVarDecl;
+    expect(decl.value.tag).toBe('builtin');
+    if (decl.value.tag === 'builtin') {
+      expect(decl.value.name).toBe('object');
+      expect(decl.value.args).toHaveLength(3);
+      // arg 0: field names block
+      expect(decl.value.args[0].tag).toBe('block');
+      // arg 1: field defaults block
+      expect(decl.value.args[1].tag).toBe('block');
+      // arg 2: body closure
+      expect(decl.value.args[2].tag).toBe('make-closure');
+    }
+  });
+
+  test('object with methods includes methods in body closure', () => {
+    const mod = lower('P: object [name [string!] greet: does [print "hi"]]');
+    const decl = mod.declarations[0] as IRVarDecl;
+    expect(decl.value.tag).toBe('builtin');
+    if (decl.value.tag === 'builtin') {
+      const body = decl.value.args[2];
+      expect(body.tag).toBe('make-closure');
+      if (body.tag === 'make-closure') {
+        expect(body.body.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
 });

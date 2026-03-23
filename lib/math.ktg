@@ -1,0 +1,99 @@
+Kintsugi [
+  name: 'math
+  exports: [
+    clamp lerp sign distance wrap deadzone remap
+    smoothstep smootherstep fraction
+    normalize magnitude rotate2d
+  ]
+]
+
+; --- Clamping & interpolation ---
+
+clamp: function [val lo hi] [
+  if val < lo [return lo]
+  if val > hi [return hi]
+  val
+]
+
+lerp: function [a b t] [
+  a + ((b - a) * t)
+]
+
+; Hermite interpolation — smooth ease in/out.
+; Input should be 0.0 to 1.0.
+smoothstep: function [t] [
+  t * t * (3.0 - (2.0 * t))
+]
+
+; Ken Perlin's improved smoothstep.
+smootherstep: function [t] [
+  t * t * t * (t * ((t * 6.0) - 15.0) + 10.0)
+]
+
+; Fractional part — useful for repeating animations.
+fraction: function [n] [
+  n - (floor n)
+]
+
+; --- Sign & direction ---
+
+sign: function [n] [
+  if n > 0 [return 1]
+  if n < 0 [return -1]
+  0
+]
+
+; --- Distance & vectors (works with pairs) ---
+
+distance: function [a [pair!] b [pair!]] [
+  dx: a/x - b/x
+  dy: a/y - b/y
+  sqrt (dx * dx + (dy * dy))
+]
+
+magnitude: function [v [pair!]] [
+  sqrt (v/x * v/x + (v/y * v/y))
+]
+
+normalize: function [v [pair!]] [
+  len: magnitude v
+  if len = 0 [return 0x0]
+  to pair! reduce [(round v/x / len) (round v/y / len)]
+]
+
+; Rotate a pair by angle (degrees).
+rotate2d: function [v [pair!] angle] [
+  c: cos angle
+  s: sin angle
+  nx: (v/x * c) - (v/y * s)
+  ny: (v/x * s) + (v/y * c)
+  to pair! reduce [(round nx) (round ny)]
+]
+
+; --- Wrapping ---
+
+wrap: function [val lo hi] [
+  range: hi - lo
+  result: val - lo
+  loop [
+    if result >= 0 [
+      if result < range [return result + lo]
+      result: result - range
+    ]
+    if result < 0 [result: result + range]
+  ]
+]
+
+; --- Deadzone ---
+
+deadzone: function [val threshold] [
+  if (abs val) < threshold [return 0]
+  val
+]
+
+; --- Remap ---
+
+remap: function [val in-lo in-hi out-lo out-hi] [
+  t: (val - in-lo) / (in-hi - in-lo)
+  lerp out-lo out-hi t
+]

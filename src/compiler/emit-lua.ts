@@ -11,7 +11,7 @@ import {
 // ============================================================
 
 // Runtime chunks that are conditionally included
-type RuntimeChunk = 'parse' | 'to' | 'make' | 'require' | 'type-predicates';
+type RuntimeChunk = 'parse' | 'to' | 'make' | 'require' | 'type-predicates' | 'object';
 
 const RUNTIME_WARNINGS: Record<RuntimeChunk, string> = {
   'parse': 'parse requires a runtime for your chosen target. Output size will be bigger than normal.',
@@ -19,6 +19,7 @@ const RUNTIME_WARNINGS: Record<RuntimeChunk, string> = {
   'make': 'make requires a runtime for your chosen target. Output size will be bigger than normal.',
   'require': 'require requires a runtime for your chosen target. Output size will be bigger than normal.',
   'type-predicates': 'type predicates (integer?, string?, etc.) require a runtime for your chosen target. Output size will be bigger than normal.',
+  'object': 'object requires a runtime for your chosen target. Output size will be bigger than normal.',
 };
 
 // Module-level state for the current compilation
@@ -47,10 +48,13 @@ export function emitLua(mod: IRModule): EmitResult {
   lines.push(LUA_PRELUDE);
   lines.push('');
 
-  // Conditional runtime chunks
-  for (const chunk of neededRuntime) {
-    lines.push(RUNTIME_CHUNKS[chunk]);
-    lines.push('');
+  // Conditional runtime chunks — ordered so dependencies come first
+  const chunkOrder: RuntimeChunk[] = ['type-predicates', 'to', 'object', 'make', 'parse', 'require'];
+  for (const chunk of chunkOrder) {
+    if (neededRuntime.has(chunk)) {
+      lines.push(RUNTIME_CHUNKS[chunk]);
+      lines.push('');
+    }
   }
 
   // Declarations
@@ -413,6 +417,10 @@ function requireRuntime(chunk: RuntimeChunk): void {
 }
 
 function emitBuiltin(expr: IRBuiltinCall): string {
+  // Object needs special handling before generic arg emission
+  if (expr.name === 'object') {
+    return emitObjectBuiltin(expr);
+  }
   const args = expr.args.map(emitExpr);
 
   switch (expr.name) {
@@ -444,11 +452,29 @@ function emitBuiltin(expr: IRBuiltinCall): string {
     case 'abs': return `math.abs(${args[0]})`;
     case 'negate': return `(-${args[0]})`;
     case 'round': return `__round(${args[0]})`;
+    case 'floor': return `__floor(${args[0]})`;
+    case 'ceil': return `__ceil(${args[0]})`;
+    case 'sqrt': return `__sqrt(${args[0]})`;
+    case 'pow': return `__pow(${args[0]}, ${args[1]})`;
+    case 'sin': return `__sin(${args[0]})`;
+    case 'cos': return `__cos(${args[0]})`;
+    case 'tan': return `__tan(${args[0]})`;
+    case 'asin': return `__asin(${args[0]})`;
+    case 'acos': return `__acos(${args[0]})`;
+    case 'atan2': return `__atan2(${args[0]}, ${args[1]})`;
+    case 'random': return `__random(${args[0]})`;
+    case 'random-seed': return `__random_seed(${args[0]})`;
+    case 'substring': return `__substring(${args[0]}, ${args[1]}, ${args[2]})`;
     case 'odd?': return `(${args[0]} % 2 ~= 0)`;
     case 'even?': return `(${args[0]} % 2 == 0)`;
     case 'not': return `not ${args[0]}`;
     case 'type': return `__type_of(${args[0]})`;
     case 'words-of': return `__words_of(${args[0]})`;
+    case 'sort': return `__sort(${args[0]})`;
+    case 'codepoint': return `__codepoint(${args[0]})`;
+    case 'from-codepoint': return `__from_codepoint(${args[0]})`;
+    case 'money?': return `__money_q(${args[0]})`;
+    case 'time-now': return `__time_now()`;
     case 'apply': return `__apply(${args[0]}, ${args[1]})`;
     case 'set': return `__set(${args[0]}, ${args[1]})`;
     case '__call_or_get': return `__call_or_get(${args[0]})`;
@@ -459,6 +485,7 @@ function emitBuiltin(expr: IRBuiltinCall): string {
       return `__to(${args[0]}, ${args[1]})`;
     case 'make':
       requireRuntime('make');
+      requireRuntime('object');
       return `__make(${args[0]}, ${args[1]})`;
     case 'parse':
       requireRuntime('parse');
@@ -478,6 +505,94 @@ function emitBuiltin(expr: IRBuiltinCall): string {
       return `__builtin_${luaName(expr.name)}(${args.join(', ')})`;
     }
   }
+}
+
+// ============================================================
+// Object emission — special handling for object builtin
+// ============================================================
+
+function emitObjectBuiltin(expr: IRBuiltinCall): string {
+  requireRuntime('object');
+
+  // args[0] = block of field names, args[1] = block of field defaults, args[2] = body closure
+  const namesExpr = expr.args[0];
+  const defaultsExpr = expr.args[1];
+  const bodyExpr = expr.args[2];
+
+  const lines: string[] = [];
+  lines.push(`(function()`);
+  lines.push(`    local __obj = {}`);
+  lines.push(`    __obj.__ktg_is_object = true`);
+
+  // Emit field names table
+  if (namesExpr.tag === 'block') {
+    lines.push(`    __obj.__ktg_field_names = {${namesExpr.values.map(emitExpr).join(', ')}}`);
+  }
+
+  // Set field defaults
+  if (namesExpr.tag === 'block' && defaultsExpr.tag === 'block') {
+    for (let i = 0; i < namesExpr.values.length; i++) {
+      const name = namesExpr.values[i];
+      const def = defaultsExpr.values[i];
+      if (name.tag === 'literal') {
+        const fieldName = luaName(String(name.value));
+        const defVal = emitExpr(def);
+        lines.push(`    __obj.${fieldName} = ${defVal}`);
+      }
+    }
+  }
+
+  // Set self reference
+  lines.push(`    __obj.self = __obj`);
+
+  // Emit body statements — set operations become __obj.field = value
+  if (bodyExpr.tag === 'make-closure' && bodyExpr.body.length > 0) {
+    for (const s of bodyExpr.body) {
+      lines.push(emitObjectBodyStmt(s, 2));
+    }
+  }
+
+  lines.push(`    return __obj`);
+  lines.push(`  end)()`);
+  return lines.join('\n');
+}
+
+function emitObjectBodyStmt(stmt: IRStmt, indent: number): string {
+  const pad = '  '.repeat(indent);
+
+  // Transform set-word assignments to field-sets on __obj
+  if (stmt.tag === 'set') {
+    const value = emitObjectBodyExpr(stmt.value);
+    return `${pad}__obj.${luaName(stmt.name)} = ${value}`;
+  }
+
+  if (stmt.tag === 'expr') {
+    return `${pad}${emitObjectBodyExpr(stmt.expr)}`;
+  }
+
+  // For other statements, use the normal emitter
+  return emitStmt(stmt, indent);
+}
+
+function emitObjectBodyExpr(expr: IRExpr): string {
+  // Rewrite closures inside object body to capture self from __obj
+  if (expr.tag === 'make-closure') {
+    const params = expr.params.map(p => luaName(p.name)).join(', ');
+    const bodyStmts = expr.body;
+    const bodyLines: string[] = [];
+    // Inject self = __obj.self at the top of the method
+    bodyLines.push(`      local self = __obj.self`);
+    for (let i = 0; i < bodyStmts.length; i++) {
+      const s = bodyStmts[i];
+      if (i === bodyStmts.length - 1 && s.tag === 'expr') {
+        bodyLines.push(`      return ${emitExpr(s.expr)}`);
+      } else {
+        bodyLines.push(emitStmt(s, 3));
+      }
+    }
+    return `function(${params})\n${bodyLines.join('\n')}\n    end`;
+  }
+  return emitExpr(expr);
 }
 
 // ============================================================
@@ -605,6 +720,56 @@ end
 
 local function __set(words, values)
   return values
+end
+
+local function __floor(n)
+  return math.floor(n)
+end
+
+local function __ceil(n)
+  return math.ceil(n)
+end
+
+local function __sqrt(n) return math.sqrt(n) end
+local function __pow(a, b) return a ^ b end
+local __deg2rad = math.pi / 180
+local __rad2deg = 180 / math.pi
+local function __sin(d) return math.sin(d * __deg2rad) end
+local function __cos(d) return math.cos(d * __deg2rad) end
+local function __tan(d) return math.tan(d * __deg2rad) end
+local function __asin(v) return math.asin(v) * __rad2deg end
+local function __acos(v) return math.acos(v) * __rad2deg end
+local function __atan2(y, x) return math.atan2(y, x) * __rad2deg end
+local function __random(max)
+  if max == math.floor(max) then return math.random(0, max - 1) end
+  return math.random() * max
+end
+local function __random_seed(s) math.randomseed(s) end
+local function __substring(s, start, len) return string.sub(s, start, start + len - 1) end
+
+local function __sort(t)
+  local c = __copy(t)
+  table.sort(c, function(a, b)
+    if type(a) == "number" and type(b) == "number" then return a < b end
+    return tostring(a) < tostring(b)
+  end)
+  return c
+end
+
+local function __codepoint(s)
+  return string.byte(s, 1)
+end
+
+local function __from_codepoint(n)
+  return string.char(n)
+end
+
+local function __money_q(v)
+  return type(v) == "table" and v.__ktg_type == "money!"
+end
+
+local function __time_now()
+  return os.time()
 end`;
 
 // ============================================================
@@ -641,6 +806,10 @@ local function __make(target_type, spec)
   local tn = target_type
   if type(target_type) == "table" and target_type.__ktg_type == "type!" then
     tn = target_type.name
+  end
+  -- make object (clone prototype with overrides)
+  if type(target_type) == "table" and target_type.__ktg_is_object then
+    return __ktg_make_object(target_type, spec)
   end
   if tn == "map!" and type(spec) == "table" then
     local m = {}
@@ -815,5 +984,47 @@ local function __type_check(value, expected)
     return actual == "function!" or type(value) == "function"
   end
   return actual == expected
+end`,
+
+  'object': `-- Runtime: object model
+local function __ktg_object(field_names, field_defaults, body_fn)
+  local obj = {}
+  obj.__ktg_is_object = true
+  obj.__ktg_field_names = field_names
+  -- Set field defaults
+  for i = 1, #field_names do
+    if field_defaults[i] ~= nil then
+      obj[field_names[i]] = field_defaults[i]
+    end
+  end
+  -- Set self reference
+  obj.self = obj
+  -- Execute body (methods, computed fields) with self available
+  if body_fn then
+    body_fn(obj)
+  end
+  return obj
+end
+
+local function __ktg_make_object(proto, overrides)
+  local obj = {}
+  -- Shallow copy all fields from prototype
+  for k, v in pairs(proto) do
+    if k ~= "self" then
+      obj[k] = v
+    end
+  end
+  obj.__ktg_is_object = true
+  obj.__ktg_field_names = proto.__ktg_field_names
+  -- Set self reference to new object
+  obj.self = obj
+  -- Apply overrides — evaluate block as key-value pairs
+  if type(overrides) == "table" then
+    for i = 1, #overrides - 1, 2 do
+      local key = tostring(overrides[i])
+      obj[key] = overrides[i + 1]
+    end
+  end
+  return obj
 end`,
 };

@@ -3,7 +3,8 @@ import {
   KtgValue, KtgBlock, KtgOp, KtgFunction, KtgNative,
   NONE, KtgError, BreakSignal, ReturnSignal,
   astToValue, isCallable, numVal, isNumeric,
-  valueToString,
+  valueToString, valuesEqual,
+  type KtgStackFrame,
 } from './values';
 import { parseString } from '@/helpers';
 import { registerNatives } from './natives';
@@ -12,6 +13,11 @@ import { checkType } from './type-check';
 export class Evaluator {
   public global: KtgContext;
   public output: string[] = [];
+  public callStack: KtgStackFrame[] = [];
+  public onOutput?: (line: string) => void;
+  public moduleCache = { contexts: new Map<string, KtgValue>(), headers: new Map<string, KtgValue>() };
+  public moduleLoading = new Set<string>();
+  public _assignTarget?: string;
 
   constructor() {
     this.global = new KtgContext();
@@ -144,11 +150,12 @@ export class Evaluator {
         const lookupCtx = val.bound ?? ctx;
         const bound = lookupCtx.get(val.name);
         if (bound === undefined) {
-          throw new KtgError('undefined', `${val.name} has no value`);
+          const lineInfo = val.line ? ` (line ${val.line})` : '';
+          throw new KtgError('undefined', `${val.name} has no value${lineInfo}`);
         }
 
         if (isCallable(bound)) {
-          return this.callCallable(bound, values, pos + 1, ctx);
+          return this.callCallable(bound, values, pos + 1, ctx, undefined, undefined, val.name);
         }
 
         if (bound.type === 'op!') {
@@ -159,7 +166,13 @@ export class Evaluator {
       }
 
       case 'set-word!': {
+        this._assignTarget = val.name;
         let [result, nextPos] = this.evalNext(values, pos + 1, ctx);
+        this._assignTarget = undefined;
+        // Copy block literals on assignment so mutations don't affect the source
+        if (result.type === 'block!' && !('context' in result)) {
+          result = { type: 'block!', values: [...result.values] };
+        }
         while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
           [result, nextPos] = this.applyInfix(result, values, nextPos, ctx);
         }
@@ -218,7 +231,8 @@ export class Evaluator {
         const lookupCtx = val.bound ?? ctx;
         const bound = lookupCtx.get(val.name);
         if (bound === undefined) {
-          throw new KtgError('undefined', `:${val.name} has no value`);
+          const lineInfo = val.line ? ` (line ${val.line})` : '';
+          throw new KtgError('undefined', `:${val.name} has no value${lineInfo}`);
         }
         return [bound, pos + 1];
       }
@@ -242,14 +256,15 @@ export class Evaluator {
         throw new KtgError('syntax', `Unexpected operator: ${val.symbol}`);
 
       case 'path!':
-        return this.evalPath(val.segments, values, pos, ctx);
+        return this.evalPath(val.segments, values, pos, ctx, val.line);
 
       case 'set-path!': {
         const segments = val.segments;
         // Resolve all but last segment
         let target = ctx.get(segments[0]);
         if (target === undefined) {
-          throw new KtgError('undefined', `${segments[0]} has no value`);
+          const lineInfo = val.line ? ` (line ${val.line})` : '';
+          throw new KtgError('undefined', `${segments[0]} has no value${lineInfo}`);
         }
         for (let i = 1; i < segments.length - 1; i++) {
           target = this.accessField(target, segments[i]);
@@ -266,7 +281,8 @@ export class Evaluator {
       case 'get-path!': {
         let result = ctx.get(val.segments[0]);
         if (result === undefined) {
-          throw new KtgError('undefined', `${val.segments[0]} has no value`);
+          const lineInfo = val.line ? ` (line ${val.line})` : '';
+          throw new KtgError('undefined', `${val.segments[0]} has no value${lineInfo}`);
         }
         for (let i = 1; i < val.segments.length; i++) {
           result = this.accessField(result, val.segments[i]);
@@ -345,7 +361,11 @@ export class Evaluator {
         const rv = numVal(r);
         if (rv === 0) throw new KtgError('math', 'Division by zero');
         if (l.type === 'money!' && isNumeric(r)) return { type: 'money!', cents: Math.round(l.cents / rv) };
-        return { type: 'float!', value: numVal(l) / rv };
+        const result = numVal(l) / rv;
+        if (l.type === 'integer!' && r.type === 'integer!' && result === Math.floor(result)) {
+          return { type: 'integer!', value: result };
+        }
+        return { type: 'float!', value: result };
       };
       case '%': return (l, r) => ({ type: isInt(l, r) ? 'integer!' : 'float!', value: numVal(l) % numVal(r) });
       case '=':  return (l, r) => ({ type: 'logic!', value: valuesEqual(l, r) });
@@ -361,31 +381,41 @@ export class Evaluator {
 
   // --- Path evaluation ---
 
-  private evalPath(segments: string[], values: KtgValue[], pos: number, ctx: KtgContext): [KtgValue, number] {
+  private evalPath(segments: string[], values: KtgValue[], pos: number, ctx: KtgContext, line?: number): [KtgValue, number] {
     const headName = segments[0];
     let result = ctx.get(headName);
     if (result === undefined) {
-      throw new KtgError('undefined', `${headName} has no value`);
+      const lineInfo = line ? ` (line ${line})` : '';
+      throw new KtgError('undefined', `${headName} has no value${lineInfo}`);
     }
+
+    const pathStr = segments.join('/');
 
     // Collect refinement names if the head is callable
     if (isCallable(result)) {
       const refinements = segments.slice(1);
-      return this.callCallable(result, values, pos + 1, ctx, refinements);
+      return this.callCallable(result, values, pos + 1, ctx, refinements, undefined, pathStr);
     }
 
     // Otherwise, navigate into the value
     let lastContext: KtgValue | undefined;
     let current: KtgValue = result;
+    let resolvedAt = 0;
     for (let i = 1; i < segments.length; i++) {
       if (current.type === 'context!') lastContext = current;
+      if (isCallable(current)) {
+        // Remaining segments are refinements
+        const refinements = segments.slice(i);
+        return this.callCallable(current, values, pos + 1, ctx, refinements, lastContext, pathStr);
+      }
       current = this.accessField(current, segments[i]);
+      resolvedAt = i;
     }
     result = current;
 
     // If the resolved value is callable, call it — inject self if from a context
     if (isCallable(result)) {
-      return this.callCallable(result, values, pos + 1, ctx, undefined, lastContext);
+      return this.callCallable(result, values, pos + 1, ctx, undefined, lastContext, pathStr);
     }
 
     return [result, pos + 1];
@@ -404,6 +434,16 @@ export class Evaluator {
     }
     if (target.type === 'context!') {
       return target.context.get(field) ?? NONE;
+    }
+    if (target.type === 'pair!') {
+      if (field === 'x') return { type: 'integer!', value: target.x };
+      if (field === 'y') return { type: 'integer!', value: target.y };
+    }
+    if (target.type === 'tuple!') {
+      const idx = parseInt(field, 10);
+      if (!isNaN(idx) && idx >= 1 && idx <= target.parts.length) {
+        return { type: 'integer!', value: target.parts[idx - 1] };
+      }
     }
     throw new KtgError('type', `Cannot access field '${field}' on ${target.type}`);
   }
@@ -429,43 +469,63 @@ export class Evaluator {
 
   // --- Calling ---
 
-  callCallable(fn: KtgFunction | KtgNative, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[], selfValue?: KtgValue): [KtgValue, number] {
-    if (fn.type === 'native!') {
-      const args: KtgValue[] = [];
-      // Consume base arity args
-      for (let i = 0; i < fn.arity; i++) {
-        if (pos >= values.length) {
-          throw new KtgError('args', `${fn.name} expects ${fn.arity} argument(s), got ${i}`);
+  callCallable(fn: KtgFunction | KtgNative, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[], selfValue?: KtgValue, callName?: string): [KtgValue, number] {
+    let frameName = callName ?? (fn.type === 'native!' ? fn.name : '(anonymous)');
+    if (this._assignTarget && frameName === fn.name) {
+      frameName = `${this._assignTarget}: ${frameName}`;
+    }
+    const frame: KtgStackFrame = { name: frameName };
+    if (selfValue && selfValue.type === 'context!') {
+      frame.path = frameName;
+    }
+    this.callStack.push(frame);
+
+    try {
+      if (fn.type === 'native!') {
+        const args: KtgValue[] = [];
+        for (let i = 0; i < fn.arity; i++) {
+          if (pos >= values.length) {
+            throw new KtgError('args', `${fn.name} expects ${fn.arity} argument(s), got ${i}`);
+          }
+          let [arg, nextPos] = this.evalNext(values, pos, ctx);
+          while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
+            [arg, nextPos] = this.applyInfix(arg, values, nextPos, ctx);
+          }
+          args.push(arg);
+          pos = nextPos;
         }
-        let [arg, nextPos] = this.evalNext(values, pos, ctx);
-        while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
-          [arg, nextPos] = this.applyInfix(arg, values, nextPos, ctx);
-        }
-        args.push(arg);
-        pos = nextPos;
-      }
-      // Consume extra args for active refinements
-      const activeRefinements = refinements ?? [];
-      if (fn.refinementArgs) {
-        for (const ref of activeRefinements) {
-          const extraCount = fn.refinementArgs[ref] ?? 0;
-          for (let i = 0; i < extraCount; i++) {
-            if (pos >= values.length) {
-              throw new KtgError('args', `${fn.name}/${ref} expects ${extraCount} extra argument(s)`);
+        const activeRefinements = refinements ?? [];
+        if (fn.refinementArgs) {
+          for (const ref of activeRefinements) {
+            const extraCount = fn.refinementArgs[ref] ?? 0;
+            for (let i = 0; i < extraCount; i++) {
+              if (pos >= values.length) {
+                throw new KtgError('args', `${fn.name}/${ref} expects ${extraCount} extra argument(s)`);
+              }
+              let [arg, nextPos] = this.evalNext(values, pos, ctx);
+              while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
+                [arg, nextPos] = this.applyInfix(arg, values, nextPos, ctx);
+              }
+              args.push(arg);
+              pos = nextPos;
             }
-            let [arg, nextPos] = this.evalNext(values, pos, ctx);
-            while (nextPos < values.length && this.nextIsInfix(values, nextPos, ctx)) {
-              [arg, nextPos] = this.applyInfix(arg, values, nextPos, ctx);
-            }
-            args.push(arg);
-            pos = nextPos;
           }
         }
+        const result = [fn.fn(args, this, ctx, activeRefinements), pos] as [KtgValue, number];
+        this.callStack.pop();
+        return result;
       }
-      return [fn.fn(args, this, ctx, activeRefinements), pos];
-    }
 
-    return this.callFunction(fn, values, pos, ctx, refinements, selfValue);
+      const result = this.callFunction(fn, values, pos, ctx, refinements, selfValue);
+      this.callStack.pop();
+      return result;
+    } catch (e) {
+      if (e instanceof KtgError && e.ktgStack.length === 0) {
+        e.ktgStack = [...this.callStack];
+      }
+      this.callStack.pop();
+      throw e;
+    }
   }
 
   callFunction(fn: KtgFunction, values: KtgValue[], pos: number, ctx: KtgContext, refinements?: string[], selfValue?: KtgValue): [KtgValue, number] {
@@ -571,20 +631,6 @@ function extractLifecycleHooks(values: KtgValue[]): {
 
 function isInt(l: KtgValue, r: KtgValue): boolean {
   return l.type === 'integer!' && r.type === 'integer!';
-}
-
-function valuesEqual(a: KtgValue, b: KtgValue): boolean {
-  if (a.type === 'none!' && b.type === 'none!') return true;
-  if (isNumeric(a) && isNumeric(b)) return numVal(a) === numVal(b);
-  if (a.type === 'string!' && b.type === 'string!') return a.value === b.value;
-  if (a.type === 'logic!' && b.type === 'logic!') return a.value === b.value;
-  if (a.type === 'word!' && b.type === 'word!') return a.name === b.name;
-  if (a.type === 'lit-word!' && b.type === 'lit-word!') return a.name === b.name;
-  if (a.type === 'meta-word!' && b.type === 'meta-word!') return a.name === b.name;
-  if (a.type === 'date!' && b.type === 'date!') return a.value === b.value;
-  if (a.type === 'time!' && b.type === 'time!') return a.value === b.value;
-  if (a.type === 'money!' && b.type === 'money!') return a.cents === b.cents;
-  return false;
 }
 
 function compareValues(a: KtgValue, b: KtgValue): number {

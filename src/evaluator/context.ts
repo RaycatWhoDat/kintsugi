@@ -9,11 +9,6 @@ export class KtgContext {
     this.bindings.set(name, value);
   }
 
-  setUp(name: string, value: KtgValue): void {
-    if (this.bindings.has(name)) { this.bindings.set(name, value); return; }
-    if (this.parent) { this.parent.setUp(name, value); return; }
-    throw new KtgError('binding', `${name} has no value to update`);
-  }
 
   get(name: string): KtgValue | undefined {
     if (this.bindings.has(name)) return this.bindings.get(name);
@@ -23,6 +18,10 @@ export class KtgContext {
 
   has(name: string): boolean {
     return this.bindings.has(name);
+  }
+
+  unset(name: string): void {
+    this.bindings.delete(name);
   }
 
   child(): KtgContext {

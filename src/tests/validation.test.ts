@@ -136,13 +136,6 @@ describe('validation — interpreter vs Lua output', () => {
     print last result
   `);
 
-  validate('reduce literal block', `
-    result: reduce [1 + 2 3 + 4 5 * 2]
-    print first result
-    print second result
-    print last result
-  `);
-
   validate('all short-circuit', `
     print all [true true 42]
     print all [true false 42]
@@ -157,12 +150,6 @@ describe('validation — interpreter vs Lua output', () => {
     p: context [x: 10 y: 20]
     w: words-of p
     print length? w
-  `);
-
-  validate('bind is no-op', `
-    data: [1 2 3]
-    bind data context [x: 10]
-    print first data
   `);
 
   validate('type predicates', `

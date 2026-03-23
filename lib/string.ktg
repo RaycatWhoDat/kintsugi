@@ -1,0 +1,71 @@
+Kintsugi [
+  name: 'string
+  exports: [
+    starts-with? ends-with? contains?
+    pad-left pad-right
+    repeat-string
+    char-at
+    reverse-string
+  ]
+]
+
+; --- Predicates ---
+
+starts-with?: function [s [string!] prefix [string!]] [
+  idx: index? s prefix
+  either none? idx [false] [idx = 1]
+]
+
+ends-with?: function [s [string!] suffix [string!]] [
+  slen: length? suffix
+  len: length? s
+  if slen > len [return false]
+  expected: (len - slen) + 1
+  idx: index? s suffix
+  either none? idx [false] [idx = expected]
+]
+
+contains?: function [s [string!] sub [string!]] [
+  not none? index? s sub
+]
+
+; --- Padding ---
+
+pad-left: function [s [string!] width [integer!] fill [string!]] [
+  loop [
+    if (length? s) >= width [return s]
+    s: join fill s
+  ]
+]
+
+pad-right: function [s [string!] width [integer!] fill [string!]] [
+  loop [
+    if (length? s) >= width [return s]
+    s: join s fill
+  ]
+]
+
+; --- Repetition ---
+
+repeat-string: function [s [string!] n [integer!]] [
+  if n <= 0 [return ""]
+  result: ""
+  loop [for [i] from 1 to n [result: join result s]]
+  result
+]
+
+; --- Character access ---
+
+char-at: function [s [string!] pos [integer!]] [
+  pick s pos
+]
+
+; --- Reverse ---
+
+reverse-string: function [s [string!]] [
+  if (length? s) <= 0 [return ""]
+  result: ""
+  len: length? s
+  loop [for [i] from len to 1 [result: join result (pick s i)]]
+  result
+]

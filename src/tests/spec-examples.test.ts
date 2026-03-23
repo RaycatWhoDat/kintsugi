@@ -121,11 +121,11 @@ describe('spec examples', () => {
       ]
     `);
     ev.evalString("result: try [safe-divide 10 0]");
-    expect(ev.evalString("select result 'ok")).toEqual({ type: 'logic!', value: false });
-    expect(ev.evalString("select result 'kind")).toEqual({ type: 'lit-word!', name: 'division-by-zero' });
+    expect(ev.evalString('result/ok')).toEqual({ type: 'logic!', value: false });
+    expect(ev.evalString('result/kind')).toEqual({ type: 'lit-word!', name: 'division-by-zero' });
     ev.evalString("result: try [safe-divide 10 2]");
-    expect(ev.evalString("select result 'ok")).toEqual({ type: 'logic!', value: true });
-    expect(ev.evalString("select result 'value")).toEqual({ type: 'float!', value: 5 });
+    expect(ev.evalString('result/ok')).toEqual({ type: 'logic!', value: true });
+    expect(ev.evalString('result/value')).toEqual({ type: 'integer!', value: 5 });
   });
 
   test('closures and higher-order functions', () => {

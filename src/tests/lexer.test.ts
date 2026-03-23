@@ -40,7 +40,7 @@ describe('strings', () => {
 });
 
 describe('chars', () => {
-  test('char literal', () => expectSingleToken('"A"', TOKEN_TYPES.CHAR, 'A'));
+  test('single char is string', () => expectSingleToken('"A"', TOKEN_TYPES.STRING, 'A'));
 });
 
 

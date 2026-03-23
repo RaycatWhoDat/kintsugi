@@ -27,6 +27,7 @@ export function parseTokens(tokens: Token[]): AstContainer {
 
     if (!containerType) {
       const atom: AstAtom = { type: token.type as AtomType, value: token.value };
+      if (token.line != null) Object.defineProperty(atom, 'line', { value: token.line, enumerable: false });
       top.children.push(atom);
     } else {
       const [openingCharacter, closingCharacter] = characterMapping[containerType];

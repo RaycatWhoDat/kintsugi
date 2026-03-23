@@ -24,6 +24,12 @@ describe('loop dialect', () => {
     ev.evalString('sum: 0 loop [for [n] from 1 to 5 [sum: sum + n]]');
     expect(ev.evalString('sum')).toEqual({ type: 'integer!', value: 15 });
   });
+
+  test('loop variables do not leak to parent scope', () => {
+    const ev = new Evaluator();
+    ev.evalString('loop [for [x] in [1 2 3] [x]]');
+    expect(() => ev.evalString('x')).toThrow('x has no value');
+  });
 });
 
 describe('loop/fold', () => {

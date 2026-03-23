@@ -84,9 +84,11 @@ describe('arithmetic operators', () => {
     expect(eval_('4 * 5')).toEqual({ type: 'integer!', value: 20 });
   });
 
-  test('division always produces float', () => {
+  test('division returns integer when exact', () => {
     expect(eval_('10 / 3')).toEqual({ type: 'float!', value: 10 / 3 });
-    expect(eval_('10 / 2')).toEqual({ type: 'float!', value: 5 });
+    expect(eval_('10 / 2')).toEqual({ type: 'integer!', value: 5 });
+    expect(eval_('10 / 5')).toEqual({ type: 'integer!', value: 2 });
+    expect(eval_('7 / 2')).toEqual({ type: 'float!', value: 3.5 });
   });
 
   test('left-to-right (no precedence)', () => {

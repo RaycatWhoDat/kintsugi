@@ -11,8 +11,15 @@ export class ReturnSignal {
   constructor(public value: KtgValue) {}
 }
 
+export interface KtgStackFrame {
+  name: string;         // function/method name
+  path?: string;        // full path if method call (e.g., "p/greet")
+}
+
 export class KtgError extends Error {
   public data: KtgValue;
+  public ktgStack: KtgStackFrame[] = [];
+  public details: string[] = [];
   constructor(
     public errorName: string,
     message: string,
@@ -21,6 +28,25 @@ export class KtgError extends Error {
     super(message);
     this.name = 'KtgError';
     this.data = data ?? NONE;
+  }
+
+  addDetail(line: string): KtgError {
+    this.details.push(line);
+    return this;
+  }
+
+  format(): string {
+    let msg = `Error [${this.errorName}]: ${this.message}`;
+    for (const d of this.details) {
+      msg += `\n  ${d}`;
+    }
+    if (this.ktgStack.length > 0) {
+      msg += '\n  where:';
+      for (const frame of this.ktgStack) {
+        msg += `\n    ${frame.path ?? frame.name}`;
+      }
+    }
+    return msg;
   }
 }
 
@@ -40,15 +66,15 @@ export type KtgFile     = { type: 'file!';    value: string };
 export type KtgUrl      = { type: 'url!';     value: string };
 export type KtgEmail    = { type: 'email!';   value: string };
 
-export type KtgWord     = { type: 'word!';     name: string; bound?: KtgContext };
-export type KtgSetWord  = { type: 'set-word!'; name: string; bound?: KtgContext };
-export type KtgGetWord  = { type: 'get-word!'; name: string; bound?: KtgContext };
-export type KtgLitWord  = { type: 'lit-word!'; name: string };
-export type KtgMetaWord = { type: 'meta-word!'; name: string };
-export type KtgPath     = { type: 'path!';     segments: string[] };
-export type KtgSetPath  = { type: 'set-path!'; segments: string[] };
-export type KtgGetPath  = { type: 'get-path!'; segments: string[] };
-export type KtgLitPath  = { type: 'lit-path!'; segments: string[] };
+export type KtgWord     = { type: 'word!';     name: string; bound?: KtgContext; line?: number };
+export type KtgSetWord  = { type: 'set-word!'; name: string; bound?: KtgContext; line?: number };
+export type KtgGetWord  = { type: 'get-word!'; name: string; bound?: KtgContext; line?: number };
+export type KtgLitWord  = { type: 'lit-word!'; name: string; line?: number };
+export type KtgMetaWord = { type: 'meta-word!'; name: string; line?: number };
+export type KtgPath     = { type: 'path!';     segments: string[]; line?: number };
+export type KtgSetPath  = { type: 'set-path!'; segments: string[]; line?: number };
+export type KtgGetPath  = { type: 'get-path!'; segments: string[]; line?: number };
+export type KtgLitPath  = { type: 'lit-path!'; segments: string[]; line?: number };
 
 export type KtgBlock    = { type: 'block!';    values: KtgValue[] };
 export type KtgParen    = { type: 'paren!';    values: KtgValue[] };
@@ -92,6 +118,11 @@ export const FALSE: KtgLogic = { type: 'logic!', value: false };
 
 const LOGIC_TRUE = new Set(['true']);
 
+function withLine<T extends KtgValue>(val: T, line?: number): T {
+  if (line != null) Object.defineProperty(val, 'line', { value: line, enumerable: false });
+  return val;
+}
+
 export function astToValue(node: AstNode): KtgValue {
   if ('children' in node) {
     const values = node.children.map(astToValue);
@@ -121,18 +152,18 @@ export function astToValue(node: AstNode): KtgValue {
     case TOKEN_TYPES.FILE:     return { type: 'file!',   value: v };
     case TOKEN_TYPES.URL:      return { type: 'url!',    value: v };
     case TOKEN_TYPES.EMAIL:    return { type: 'email!',  value: v };
-    case TOKEN_TYPES.WORD:     return { type: 'word!',   name: v };
-    case TOKEN_TYPES.SET_WORD: return { type: 'set-word!', name: v };
-    case TOKEN_TYPES.GET_WORD: return { type: 'get-word!', name: v };
-    case TOKEN_TYPES.LIT_WORD: return { type: 'lit-word!', name: v };
-    case TOKEN_TYPES.PATH:     return { type: 'path!',     segments: v.split('/') };
-    case TOKEN_TYPES.SET_PATH: return { type: 'set-path!', segments: v.split('/') };
-    case TOKEN_TYPES.GET_PATH: return { type: 'get-path!', segments: v.split('/') };
-    case TOKEN_TYPES.LIT_PATH: return { type: 'lit-path!', segments: v.split('/') };
+    case TOKEN_TYPES.WORD:     return withLine({ type: 'word!',   name: v }, atom.line);
+    case TOKEN_TYPES.SET_WORD: return withLine({ type: 'set-word!', name: v }, atom.line);
+    case TOKEN_TYPES.GET_WORD: return withLine({ type: 'get-word!', name: v }, atom.line);
+    case TOKEN_TYPES.LIT_WORD: return withLine({ type: 'lit-word!', name: v }, atom.line);
+    case TOKEN_TYPES.PATH:     return withLine({ type: 'path!',     segments: v.split('/') }, atom.line);
+    case TOKEN_TYPES.SET_PATH: return withLine({ type: 'set-path!', segments: v.split('/') }, atom.line);
+    case TOKEN_TYPES.GET_PATH: return withLine({ type: 'get-path!', segments: v.split('/') }, atom.line);
+    case TOKEN_TYPES.LIT_PATH: return withLine({ type: 'lit-path!', segments: v.split('/') }, atom.line);
     case TOKEN_TYPES.OPERATOR: return { type: 'op!', symbol: v };
-    case TOKEN_TYPES.FUNCTION: return { type: 'word!', name: 'function' };
-    case TOKEN_TYPES.DIRECTIVE: return { type: 'word!', name: `#${v}` };
-    case TOKEN_TYPES.META_WORD: return { type: 'meta-word!', name: v };
+    case TOKEN_TYPES.FUNCTION: return withLine({ type: 'word!', name: 'function' }, atom.line);
+    case TOKEN_TYPES.DIRECTIVE: return withLine({ type: 'word!', name: `#${v}` }, atom.line);
+    case TOKEN_TYPES.META_WORD: return withLine({ type: 'meta-word!', name: v }, atom.line);
     case TOKEN_TYPES.COMMENT:  return NONE; // comments are discarded
     case TOKEN_TYPES.STUB:     return NONE;
     default:
@@ -192,10 +223,34 @@ export function valueToString(val: KtgValue): string {
     case 'context!':    return 'context!';
     case 'function!':  return 'function!';
     case 'native!':    return `native!:${val.name}`;
-    case 'op!':        return `op!:${val.name}`;
+    case 'op!':        return 'symbol' in val ? val.symbol : `op!:${val.name}`;
     case 'type!':      return val.name;
-    case 'op!':        return 'symbol' in val ? val.symbol : val.name;
   }
+}
+
+export function valuesEqual(a: KtgValue, b: KtgValue): boolean {
+  if (a.type === 'none!' && b.type === 'none!') return true;
+  if (isNumeric(a) && isNumeric(b)) return numVal(a) === numVal(b);
+  if (a.type === 'money!' && b.type === 'money!') return a.cents === b.cents;
+  if (a.type === 'string!' && b.type === 'string!') return a.value === b.value;
+  if (a.type === 'logic!' && b.type === 'logic!') return a.value === b.value;
+  if (a.type === 'date!' && b.type === 'date!') return a.value === b.value;
+  if (a.type === 'time!' && b.type === 'time!') return a.value === b.value;
+  if (a.type === 'pair!' && b.type === 'pair!') return a.x === b.x && a.y === b.y;
+  if (a.type === 'tuple!' && b.type === 'tuple!') {
+    return a.parts.length === b.parts.length && a.parts.every((v, i) => v === b.parts[i]);
+  }
+  if (a.type === 'block!' && b.type === 'block!') {
+    return a.values.length === b.values.length && a.values.every((v, i) => valuesEqual(v, b.values[i]));
+  }
+  // All word types compare by name (cross-type, Rebol style)
+  const wordName = (v: KtgValue): string | null => {
+    if (v.type === 'word!' || v.type === 'set-word!' || v.type === 'get-word!' || v.type === 'lit-word!' || v.type === 'meta-word!') return v.name;
+    return null;
+  };
+  const an = wordName(a), bn = wordName(b);
+  if (an !== null && bn !== null) return an === bn;
+  return false;
 }
 
 export function isCallable(val: KtgValue): val is KtgFunction | KtgNative {
@@ -210,3 +265,16 @@ export function numVal(val: KtgValue): number {
   if (val.type === 'integer!' || val.type === 'float!') return val.value;
   throw new KtgError('type', `Expected number, got ${val.type}`);
 }
+
+// --- Type guards ---
+
+export function isWord(v: KtgValue): v is KtgWord { return v.type === 'word!'; }
+export function isSetWord(v: KtgValue): v is KtgSetWord { return v.type === 'set-word!'; }
+export function isGetWord(v: KtgValue): v is KtgGetWord { return v.type === 'get-word!'; }
+export function isLitWord(v: KtgValue): v is KtgLitWord { return v.type === 'lit-word!'; }
+export function isMetaWord(v: KtgValue): v is KtgMetaWord { return v.type === 'meta-word!'; }
+export function isBlock(v: KtgValue): v is KtgBlock { return v.type === 'block!'; }
+export function isParen(v: KtgValue): v is KtgParen { return v.type === 'paren!'; }
+export function isString(v: KtgValue): v is KtgString { return v.type === 'string!'; }
+export function isContext(v: KtgValue): v is KtgCtxValue { return v.type === 'context!'; }
+export function isMoney(v: KtgValue): v is KtgMoney { return v.type === 'money!'; }
