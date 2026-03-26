@@ -48,20 +48,20 @@ print goblin/hp                        ; 90
 Requires [Nim](https://nim-lang.org/) 2.0+.
 
 ```bash
-# Build the interpreter
-nim c src/kintsugi.nim
-
-# Run a file
-src/kintsugi examples/full-spec.ktg
-
-# REPL
-src/kintsugi
-
-# Compile to Lua
-src/kintsugi -c examples/hello.ktg
-
 # Run tests
 nimble test
+
+# Build the interpreter
+nimble build
+
+# REPL
+bin/kintsugi
+
+# Run a file
+bin/kintsugi examples/full-spec.ktg
+
+# Compile to Lua
+bin/kintsugi -c examples/hello.ktg
 ```
 
 ## Learn Kintsugi

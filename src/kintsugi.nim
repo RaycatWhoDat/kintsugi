@@ -94,15 +94,23 @@ proc runFile(path: string) =
     echo "Error: " & e.msg
     quit(1)
 
-proc compileLua(path: string) =
+proc compileLua(path: string, outPath: string = "") =
   if not fileExists(path):
     echo "Error: file not found: " & path
     quit(1)
 
-  let source = readFile(path)
+  let source = stripHeader(readFile(path))
   let ast = parseSource(source)
   let luaCode = emitLua(ast)
-  echo luaCode
+
+  if outPath.len > 0:
+    writeFile(outPath, luaCode)
+    echo "Compiled: " & path & " -> " & outPath
+  else:
+    # Default: same name with .lua extension
+    let defaultOut = path.changeFileExt("lua")
+    writeFile(defaultOut, luaCode)
+    echo "Compiled: " & path & " -> " & defaultOut
 
 proc main() =
   let args = commandLineParams()
@@ -111,31 +119,53 @@ proc main() =
     repl()
     return
 
-  # Check for compile flag
-  if args.len >= 2 and (args[0] == "-c" or args[0] == "--compile"):
-    compileLua(args[1])
-    return
+  var i = 0
+  var compile = false
+  var outPath = ""
+  var filePath = ""
 
-  if args.len == 1:
-    let path = args[0]
-
-    if not fileExists(path):
-      echo "Error: file not found: " & path
-      quit(1)
-
-    let source = readFile(path)
-
-    # Check for Kintsugi/Lua header
-    if source.startsWith("Kintsugi/Lua"):
-      compileLua(path)
+  while i < args.len:
+    case args[i]
+    of "-c", "--compile":
+      compile = true
+    of "-o", "--output":
+      if i + 1 < args.len:
+        i += 1
+        outPath = args[i]
+      else:
+        echo "Error: -o requires a path"
+        quit(1)
+    of "--stdout":
+      outPath = "-"
     else:
-      runFile(path)
+      filePath = args[i]
+    i += 1
+
+  if filePath.len == 0:
+    echo "Usage: kintsugi [options] [file]"
+    echo ""
+    echo "  (no args)                    Start REPL"
+    echo "  <file>                       Run a Kintsugi file"
+    echo "  -c, --compile <file>         Compile to Lua (.ktg -> .lua)"
+    echo "  -c <file> -o <out>           Compile to specific output file"
+    echo "  -c <file> --stdout           Compile to stdout"
+    quit(1)
+
+  if compile:
+    if outPath == "-":
+      # stdout mode
+      let source = stripHeader(readFile(filePath))
+      let ast = parseSource(source)
+      echo emitLua(ast)
+    else:
+      compileLua(filePath, outPath)
     return
 
-  echo "Usage: kintsugi [options] [file]"
-  echo "  (no args)          Start REPL"
-  echo "  <file>             Run a Kintsugi file"
-  echo "  -c, --compile <file>  Compile to Lua"
-  quit(1)
+  # Auto-detect: Kintsugi/Lua header means compile
+  let source = readFile(filePath)
+  if source.strip.startsWith("Kintsugi/Lua"):
+    compileLua(filePath, outPath)
+  else:
+    runFile(filePath)
 
 main()
