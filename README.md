@@ -1,6 +1,6 @@
 # Kintsugi
 
-A homoiconic programming language where the compiler, the dialects, and the programs are all the same thing. Blocks of data interpreted by dialects, targeting clean Lua output for game dev on constrained devices.
+A homoiconic programming language. Blocks of data interpreted by dialects, targeting clean Lua output for game dev on constrained devices.
 
 > [!CAUTION]
 > This language is in active development. Things will break and explode.
@@ -41,7 +41,7 @@ print goblin/hp                        ; 90
 - **Preprocessing** -- `#preprocess` runs the full language at compile time for code generation
 - **Modules** -- `require` loads and caches modules as frozen objects. `exports` controls visibility
 - **Custom type system** -- `@type` unions, `@type/where` with guards, `@type/enum` (case-sensitive), structural context validation
-- **Lua compiler** targeting Lua 5.1 (LOVE2D, Playdate, Defold) -- zero-dependency output
+- **Lua compiler** targeting Lua 5.1 (LOVE2D, Playdate, Defold)
 
 ## Quick Start
 
@@ -80,8 +80,8 @@ The full spec with 30+ design decisions is at [`docs/language-spec-questions.md`
 - **`context!` is mutable, `object!` is immutable.** The type determines mutability, not annotations.
 - **Set-word always shadows.** Mutate shared state via context + set-path.
 - **Only `false` and `none` are falsy.** 0, "", and [] are truthy.
-- **Explicit primitives, compositional magic.** Small explicit functions at the base. Users build DWIM on top.
-- **Rich compile-time, lean runtime.** Dialects resolve at compile time. The Playdate doesn't know Kintsugi exists.
+- **Explicit primitives, compositional magic.** Small explicit functions at the base.
+- **Rich compile-time, lean runtime.** Dialects resolve at compile time. The Playdate shouldn't know Kintsugi exists.
 
 ## Architecture
 
@@ -93,10 +93,8 @@ Source text
   -> Evaluator (runs it) OR Lua Emitter (emits .lua)
 ```
 
-The AST is the IR. No intermediate representation -- homoiconicity means the data structure the evaluator walks is the same one the emitter walks.
-
-Written in Nim. Compiles to C. 6,000 lines of source, 771 tests, zero failures.
+Written in Nim. Compiles to C. 6,000 lines of source, 771 tests.
 
 ## Lineage
 
-Influenced by REBOL, Red, Ren-C, Common Lisp, Lua, and Raku.
+Influenced by REBOL, Red, Common Lisp, Lua, and Raku.
