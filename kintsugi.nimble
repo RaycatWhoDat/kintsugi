@@ -5,9 +5,13 @@ description   = "The Kintsugi Programming Language"
 license       = "MIT"
 srcDir        = "src"
 bin           = @["kintsugi"]
+binDir        = "bin"
 
 # Dependencies
 requires "nim >= 2.0.0"
+
+task build, "Build the interpreter":
+  exec "nim c -d:release --outdir:bin src/kintsugi.nim"
 
 task test, "Run all tests":
   for f in listFiles("tests"):

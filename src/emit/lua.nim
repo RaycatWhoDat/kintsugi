@@ -173,8 +173,6 @@ proc emitBlock(e: var LuaEmitter, vals: seq[KtgValue])
 # Infix operators
 # ---------------------------------------------------------------------------
 
-const InfixOps = ["+", "-", "*", "/", "%", "=", "<>", "<", ">", "<=", ">="].toHashSet
-
 proc isInfixOp(val: KtgValue): bool =
   val.kind == vkOp or
     (val.kind == vkWord and val.wordKind == wkWord and val.wordName in ["and", "or"])
@@ -902,7 +900,7 @@ proc emitExpr(e: var LuaEmitter, vals: seq[KtgValue], pos: var int): string =
 
       # --- Type conversion ---
       elif name == "to":
-        let targetType = e.emitExpr(vals, pos)
+        discard e.emitExpr(vals, pos)
         let val_expr = e.emitExpr(vals, pos)
         # Best-effort type conversion
         result = "tonumber(" & val_expr & ") or " & val_expr
@@ -993,7 +991,6 @@ proc emitExpr(e: var LuaEmitter, vals: seq[KtgValue], pos: var int): string =
   of vkMap:
     var parts: seq[string] = @[]
     for k, v in val.mapEntries:
-      var dummyPos = 0
       parts.add(luaName(k) & " = " & emitLiteral(v))
     result = "{" & parts.join(", ") & "}"
 

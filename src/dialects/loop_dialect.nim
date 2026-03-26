@@ -1,4 +1,3 @@
-import std/[strutils]
 import ../core/types
 import ../eval/[dialect, evaluator]
 

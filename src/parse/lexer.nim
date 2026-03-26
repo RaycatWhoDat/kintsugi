@@ -1,4 +1,4 @@
-import std/[strutils, parseutils]
+import std/[strutils]
 import ../core/types
 
 type

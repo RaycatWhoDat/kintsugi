@@ -25,7 +25,7 @@ proc setupEval(): Evaluator =
 
 proc repl() =
   let eval = setupEval()
-  echo "Kintsugi v0.1.0"
+  echo "======== Kintsugi v0.3.0 ========"
   echo "Type expressions to evaluate. Ctrl+D to exit."
   echo ""
 
@@ -54,12 +54,31 @@ proc repl() =
     except CatchableError as e:
       echo "Error: " & e.msg
 
+proc stripHeader(source: string): string =
+  ## Strip Kintsugi [...] header if present.
+  let trimmed = source.strip
+  if not trimmed.startsWith("Kintsugi"):
+    return source
+  var depth = 0
+  var inHeader = false
+  for i in 0 ..< source.len:
+    if source[i] == '[' and not inHeader:
+      inHeader = true
+      depth = 1
+    elif source[i] == '[' and inHeader:
+      depth += 1
+    elif source[i] == ']' and inHeader:
+      depth -= 1
+      if depth == 0:
+        return source[i+1 .. ^1]
+  source
+
 proc runFile(path: string) =
   if not fileExists(path):
     echo "Error: file not found: " & path
     quit(1)
 
-  let source = readFile(path)
+  let source = stripHeader(readFile(path))
   let eval = setupEval()
 
   try:

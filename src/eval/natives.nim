@@ -1,4 +1,4 @@
-import std/[strutils, tables, math, algorithm, sequtils, sets, os]
+import std/[strutils, tables, math, algorithm, sets, os]
 import ../core/[types, equality]
 import ../parse/parser
 import dialect, evaluator
@@ -8,11 +8,6 @@ proc native(ctx: KtgContext, name: string, arity: int, fn: NativeFnProc) =
     nativeFn: KtgNative(name: name, arity: arity, fn: fn),
     line: 0))
 
-proc op(ctx: KtgContext, symbol: string, fn: NativeFnProc) =
-  ctx.set(symbol, KtgValue(kind: vkOp,
-    opFn: KtgNative(name: symbol, arity: 2, fn: fn),
-    opSymbol: symbol,
-    line: 0))
 
 proc registerNatives*(eval: Evaluator) =
   let ctx = eval.global
@@ -156,7 +151,6 @@ proc registerNatives*(eval: Evaluator) =
         let predFn = eval.currentCtx.get(predicateName)
         if isCallable(predFn):
           var predArgs = @[value]
-          var pos = 0
           return predFn.nativeFn.fn(predArgs, ep)
 
       # Unknown type
@@ -1010,13 +1004,13 @@ proc registerNatives*(eval: Evaluator) =
       # evaluate overrides
       discard eval.evalBlock(specBlock.blockVals, ctxInner)
       # bind self
-      let result = KtgValue(kind: vkContext, ctx: ctxInner, line: 0)
-      ctxInner.set("self", result)
+      let res = KtgValue(kind: vkContext, ctx: ctxInner, line: 0)
+      ctxInner.set("self", res)
       # copy methods
       for key, val in proto.entries:
         if val.kind == vkFunction or val.kind == vkNative:
           ctxInner.set(key, val)
-      return result
+      return res
 
     if typeArg.kind == vkContext:
       if specBlock.kind != vkBlock:
@@ -1026,9 +1020,9 @@ proc registerNatives*(eval: Evaluator) =
       for key, val in proto.entries:
         ctxInner.set(key, val)
       discard eval.evalBlock(specBlock.blockVals, ctxInner)
-      let result = KtgValue(kind: vkContext, ctx: ctxInner, line: 0)
-      ctxInner.set("self", result)
-      return result
+      let res = KtgValue(kind: vkContext, ctx: ctxInner, line: 0)
+      ctxInner.set("self", res)
+      return res
 
     # make map! [key: val ...]
     if typeArg.kind == vkType and typeArg.typeName == "map!":
@@ -1082,11 +1076,11 @@ proc registerNatives*(eval: Evaluator) =
 
   ctx.native("intersect", 2, proc(args: seq[KtgValue], ep: pointer): KtgValue =
     if args[0].kind == vkSet and args[1].kind == vkSet:
-      var result = initHashSet[string]()
+      var res = initHashSet[string]()
       for m in args[0].setMembers:
         if m in args[1].setMembers:
-          result.incl(m)
-      return KtgValue(kind: vkSet, setMembers: result, line: 0)
+          res.incl(m)
+      return KtgValue(kind: vkSet, setMembers: res, line: 0)
     raise KtgError(kind: "type", msg: "intersect expects two set! values", data: nil)
   )
 
@@ -1219,9 +1213,9 @@ proc registerNatives*(eval: Evaluator) =
     else:
       resultObj = freeze(isoCtx)
 
-    let result = KtgValue(kind: vkObject, obj: resultObj, line: 0)
-    eval.moduleCache[resolvedPath] = result
-    result
+    let res = KtgValue(kind: vkObject, obj: resultObj, line: 0)
+    eval.moduleCache[resolvedPath] = res
+    res
   )
 
   # --- Exports ---

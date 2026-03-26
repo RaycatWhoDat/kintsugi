@@ -1,4 +1,4 @@
-import std/[strutils, tables, sequtils, math]
+import std/[strutils, tables, math]
 import ../core/[types, equality]
 import ../parse/parser
 import dialect
@@ -692,16 +692,6 @@ proc typeMatches(eval: Evaluator, actual, expected: string, value: KtgValue, ctx
   else:
     # Check if this is a custom type
     return eval.matchesCustomTypeByName(value, expected, ctx)
-
-proc typeMatches(actual, expected: string): bool =
-  if expected == actual: return true
-  if expected == "any-type!": return true
-  case expected
-  of "number!": actual in ["integer!", "float!"]
-  of "any-word!": actual in ["word!", "set-word!", "get-word!", "lit-word!", "meta-word!"]
-  of "scalar!": actual in ["integer!", "float!", "money!", "date!", "time!", "pair!", "tuple!"]
-  of "any-block!": actual in ["block!", "paren!", "path!"]
-  else: false
 
 proc callCallable*(eval: Evaluator, fn: KtgValue, vals: seq[KtgValue],
                    pos: var int, ctx: KtgContext, selfVal: KtgValue = nil): KtgValue =
