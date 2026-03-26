@@ -12,4 +12,4 @@ requires "nim >= 2.0.0"
 task test, "Run all tests":
   for f in listFiles("tests"):
     if f.endsWith(".nim") and f.startsWith("tests/test_") and f != "tests/debug.nim":
-      exec "nim c -r " & f
+      exec "nim c -r --outdir:bin/tests " & f
