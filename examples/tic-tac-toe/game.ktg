@@ -9,9 +9,9 @@ Kintsugi [
 game-status!: @type/enum ['playing | 'x-wins | 'o-wins | 'draw]
 
 Game: object [
-  field [board [context!]]
-  field [turn [word!]]
-  field [status [game-status!]]
+  field/required [board [context!]]
+  field/required [turn [word!]]
+  field/required [status [game-status!]]
 
   turn: 'x
   status: 'playing
@@ -37,7 +37,7 @@ Game: object [
     self/status
   ]
 
-  reset: does [
+  reset: function [] [
     self/board/clear
     self/turn: 'x
     self/status: 'playing

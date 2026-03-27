@@ -1,12 +1,13 @@
 import std/[unittest, os, sets, tables]
 import ../src/core/types
 import ../src/eval/[dialect, evaluator, natives]
-import ../src/dialects/loop_dialect
+import ../src/dialects/[loop_dialect, object_dialect]
 
 proc makeEval(): Evaluator =
   let eval = newEvaluator()
   eval.registerNatives()
   eval.registerDialect(newLoopDialect())
+  eval.registerObjectDialect()
   eval
 
 suite "make map!":

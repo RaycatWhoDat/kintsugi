@@ -1,4 +1,4 @@
-import std/tables
+import std/[tables, sets]
 import ../core/types
 
 type
@@ -10,6 +10,7 @@ type
     callStack*: seq[StackFrame]
     dialects*: seq[Dialect]
     moduleCache*: Table[string, KtgValue]
+    moduleLoading*: HashSet[string]
 
   Dialect* = ref object of RootObj
     name*: string

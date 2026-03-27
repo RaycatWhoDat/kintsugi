@@ -13,7 +13,7 @@ Kintsugi [
 ;   7 | 8 | 9
 
 Board: object [
-  field [cells [block!]]
+  field/required [cells [block!]]
 
   cells: [none none none none none none none none none]
 
@@ -33,7 +33,7 @@ Board: object [
     ]
   ]
 
-  full?: does [
+  full?: function [] [
     state: context [found-empty: false]
     loop [for [c] in self/cells [
       if none? c [state/found-empty: true]
@@ -41,7 +41,7 @@ Board: object [
     not state/found-empty
   ]
 
-  clear: does [
+  clear: function [] [
     self/cells: [none none none none none none none none none]
   ]
 
@@ -54,7 +54,7 @@ Board: object [
     none
   ]
 
-  winner: does [
+  winner: function [] [
     ; rows
     lines: [
       [1 2 3] [4 5 6] [7 8 9]

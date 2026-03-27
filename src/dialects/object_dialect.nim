@@ -1,91 +1,129 @@
-import std/[tables]
+import std/[tables, sets]
 import ../core/types
 import ../eval/[dialect, evaluator]
 
 ## Object dialect — prototype-based object system.
 ##
-## `object [spec]` — creates an immutable object! (prototype)
-##   Field declarations use the `field` keyword:
-##     field [name [type!]]         — required field
-##     field [name [type!] default] — field with initial value
-##   Everything else in the block is the prototype body (methods)
+## Field declarations:
+##   field/required [name [type!]]              — one required field
+##   field/optional [name [type!] default]      — one optional field (default evaluated)
+##   fields [                                   — bulk declaration
+##     required [name [type!] name2 [type!]]
+##     optional [name [type!] default ...]
+##   ]
 ##
 ## `make Prototype [overrides]` — stamps a mutable context! (instance)
-##   Shallow copies fields, applies overrides, validates required fields,
-##   binds `self` in each method's closure.
-##
-## Auto-generation: when assigned to a set-word (e.g., `Person: object [...]`),
-##   auto-generates `person!` type predicate and `make-person` constructor.
-##   Handled in the evaluator's set-word handler.
+## Auto-generation: Person: object [...] → person!, person?, make-person
 
 
-proc parseFieldDecl(fieldBlock: seq[KtgValue]): FieldSpec =
-  ## Parse a single field declaration block:
-  ##   [name [type!]]         — required
-  ##   [name [type!] default] — with default value
-  if fieldBlock.len < 2:
-    raise KtgError(kind: "object",
-      msg: "field declaration needs at least name and type: field [name [type!]]",
-      data: nil)
-
-  let nameVal = fieldBlock[0]
-  if nameVal.kind != vkWord or nameVal.wordKind != wkWord:
-    raise KtgError(kind: "object",
-      msg: "field name must be a word, got " & typeName(nameVal),
-      data: nil)
-
-  let typeBlockVal = fieldBlock[1]
-  if typeBlockVal.kind != vkBlock or typeBlockVal.blockVals.len == 0:
-    raise KtgError(kind: "object",
-      msg: "field type must be a non-empty block [type!]",
-      data: nil)
-
-  let fieldTypeName = $typeBlockVal.blockVals[0]
-
-  if fieldBlock.len >= 3:
-    # Has default value
-    FieldSpec(
-      name: nameVal.wordName,
-      typeName: fieldTypeName,
-      hasDefault: true,
-      defaultVal: fieldBlock[2]
-    )
-  else:
-    # Required field
-    FieldSpec(
-      name: nameVal.wordName,
-      typeName: fieldTypeName,
-      hasDefault: false,
-      defaultVal: nil
-    )
+proc parseRequiredField(blk: seq[KtgValue], pos: var int): FieldSpec =
+  ## Parse one required field: name [type!]
+  if pos >= blk.len or blk[pos].kind != vkWord or blk[pos].wordKind != wkWord:
+    raise KtgError(kind: "object", msg: "expected field name", data: nil)
+  let name = blk[pos].wordName
+  pos += 1
+  if pos >= blk.len or blk[pos].kind != vkBlock or blk[pos].blockVals.len == 0:
+    raise KtgError(kind: "object", msg: "expected type block [type!] for field '" & name & "'", data: nil)
+  let typeName = $blk[pos].blockVals[0]
+  pos += 1
+  FieldSpec(name: name, typeName: typeName, hasDefault: false, defaultVal: nil)
 
 
-proc parseObjectBlock(blk: seq[KtgValue], bodyStart: var int): seq[FieldSpec] =
-  ## Walk the object spec block. Extract `field [...]` declarations.
-  ## Everything that isn't a `field` keyword is part of the body.
+proc parseOptionalField(blk: seq[KtgValue], pos: var int, eval: Evaluator, ctx: KtgContext): FieldSpec =
+  ## Parse one optional field: name [type!] default
+  ## Default value is evaluated.
+  if pos >= blk.len or blk[pos].kind != vkWord or blk[pos].wordKind != wkWord:
+    raise KtgError(kind: "object", msg: "expected field name", data: nil)
+  let name = blk[pos].wordName
+  pos += 1
+  if pos >= blk.len or blk[pos].kind != vkBlock or blk[pos].blockVals.len == 0:
+    raise KtgError(kind: "object", msg: "expected type block [type!] for field '" & name & "'", data: nil)
+  let typeName = $blk[pos].blockVals[0]
+  pos += 1
+  if pos >= blk.len:
+    raise KtgError(kind: "object", msg: "expected default value for field '" & name & "'", data: nil)
+  # Evaluate the default value
+  let defaultVal = eval.evalNext(blk, pos, ctx)
+  FieldSpec(name: name, typeName: typeName, hasDefault: true, defaultVal: defaultVal)
+
+
+proc parseFieldsBlock(blk: seq[KtgValue], eval: Evaluator, ctx: KtgContext): seq[FieldSpec] =
+  ## Parse a fields [...] block with required/optional subsections.
+  var specs: seq[FieldSpec] = @[]
+  var pos = 0
+  while pos < blk.len:
+    let current = blk[pos]
+    if current.kind == vkWord and current.wordKind == wkWord:
+      case current.wordName
+      of "required":
+        pos += 1
+        if pos >= blk.len or blk[pos].kind != vkBlock:
+          raise KtgError(kind: "object", msg: "required expects a block", data: nil)
+        let reqBlock = blk[pos].blockVals
+        pos += 1
+        var rpos = 0
+        while rpos < reqBlock.len:
+          specs.add(parseRequiredField(reqBlock, rpos))
+      of "optional":
+        pos += 1
+        if pos >= blk.len or blk[pos].kind != vkBlock:
+          raise KtgError(kind: "object", msg: "optional expects a block", data: nil)
+        let optBlock = blk[pos].blockVals
+        pos += 1
+        var opos = 0
+        while opos < optBlock.len:
+          specs.add(parseOptionalField(optBlock, opos, eval, ctx))
+      else:
+        pos += 1
+    else:
+      pos += 1
+  specs
+
+
+proc parseObjectBlock(blk: seq[KtgValue], bodyStart: var int,
+                       eval: Evaluator, ctx: KtgContext): seq[FieldSpec] =
+  ## Walk the object spec block. Extract field declarations.
+  ## Supports:
+  ##   field/required [name [type!]]
+  ##   field/optional [name [type!] default]
+  ##   fields [required [...] optional [...]]
   var specs: seq[FieldSpec] = @[]
   var pos = 0
 
   while pos < blk.len:
     let current = blk[pos]
 
-    # Check for `field` keyword followed by a block
-    if current.kind == vkWord and current.wordKind == wkWord and
-       current.wordName == "field" and
-       pos + 1 < blk.len and blk[pos + 1].kind == vkBlock:
-      let fieldBlock = blk[pos + 1].blockVals
-      specs.add(parseFieldDecl(fieldBlock))
-      pos += 2
-    else:
-      # Not a field declaration — this is where the body starts
-      break
+    if current.kind == vkWord and current.wordKind == wkWord:
+      # fields [...] — bulk declaration
+      if current.wordName == "fields" and pos + 1 < blk.len and blk[pos + 1].kind == vkBlock:
+        specs.add(parseFieldsBlock(blk[pos + 1].blockVals, eval, ctx))
+        pos += 2
+        continue
+
+      # field/required [...] — sugar for one required field
+      if current.wordName == "field/required" and pos + 1 < blk.len and blk[pos + 1].kind == vkBlock:
+        let fieldBlock = blk[pos + 1].blockVals
+        var fpos = 0
+        specs.add(parseRequiredField(fieldBlock, fpos))
+        pos += 2
+        continue
+
+      # field/optional [...] — sugar for one optional field
+      if current.wordName == "field/optional" and pos + 1 < blk.len and blk[pos + 1].kind == vkBlock:
+        let fieldBlock = blk[pos + 1].blockVals
+        var fpos = 0
+        specs.add(parseOptionalField(fieldBlock, fpos, eval, ctx))
+        pos += 2
+        continue
+
+    # Not a field declaration — body starts here
+    break
 
   bodyStart = pos
   specs
 
 
 proc cloneFuncWithSelf(fn: KtgFunc, selfCtx: KtgContext): KtgFunc =
-  ## Create a copy of a function with `self` bound in its closure.
   let newClosure = selfCtx.child
   newClosure.parent = fn.closure
   newClosure.set("self", KtgValue(kind: vkContext, ctx: selfCtx, line: 0))
@@ -110,15 +148,13 @@ proc registerObjectDialect*(eval: Evaluator) =
       let spec = args[0]
 
       if spec.kind != vkBlock:
-        raise KtgError(kind: "type",
-          msg: "object expects a spec block",
-          data: spec)
+        raise KtgError(kind: "type", msg: "object expects a spec block", data: spec)
 
       let blk = spec.blockVals
 
       # Parse field declarations
       var bodyStart = 0
-      var fieldSpecs = parseObjectBlock(blk, bodyStart)
+      var fieldSpecs = parseObjectBlock(blk, bodyStart, eval, eval.currentCtx)
 
       # Build entries — start with field defaults or none
       var entries = initOrderedTable[string, KtgValue]()
@@ -128,10 +164,9 @@ proc registerObjectDialect*(eval: Evaluator) =
         else:
           entries[fs.name] = ktgNone()
 
-      # Evaluate the body (method definitions, additional init)
+      # Evaluate the body (method definitions)
       if bodyStart < blk.len:
         let bodyCtx = newContext(eval.currentCtx)
-        # Pre-populate fields so body can reference them
         for fs in fieldSpecs:
           if fs.hasDefault:
             bodyCtx.set(fs.name, fs.defaultVal)
@@ -139,11 +174,9 @@ proc registerObjectDialect*(eval: Evaluator) =
             bodyCtx.set(fs.name, ktgNone())
         let body = blk[bodyStart .. ^1]
         discard eval.evalBlock(body, bodyCtx)
-        # Copy all definitions from body into entries
         for key, val in bodyCtx.entries:
           entries[key] = val
 
-      # Create the frozen object
       let obj = newObject(entries, fieldSpecs)
       KtgValue(kind: vkObject, obj: obj, line: 0)
     ),
@@ -159,12 +192,32 @@ proc registerObjectDialect*(eval: Evaluator) =
       let source = args[0]
       let overrides = args[1]
 
-      if overrides.kind != vkBlock:
-        raise KtgError(kind: "type",
-          msg: "make expects a block of overrides",
-          data: overrides)
+      # make map! [key: val ...]
+      if source.kind == vkType and source.typeName == "map!":
+        if overrides.kind != vkBlock:
+          raise KtgError(kind: "type", msg: "make map! expects block!", data: nil)
+        let ctxInner = newContext(eval.currentCtx)
+        discard eval.evalBlock(overrides.blockVals, ctxInner)
+        var entries = initOrderedTable[string, KtgValue]()
+        for key, val in ctxInner.entries:
+          entries[key] = val
+        return KtgValue(kind: vkMap, mapEntries: entries, line: 0)
 
-      # Determine what we're making from
+      # make set! [values...]
+      if source.kind == vkType and source.typeName == "set!":
+        if overrides.kind != vkBlock:
+          raise KtgError(kind: "type", msg: "make set! expects block!", data: nil)
+        var members = initHashSet[string]()
+        var pos = 0
+        while pos < overrides.blockVals.len:
+          var v = eval.evalNext(overrides.blockVals, pos, eval.currentCtx)
+          eval.applyInfix(v, overrides.blockVals, pos, eval.currentCtx)
+          members.incl($v)
+        return KtgValue(kind: vkSet, setMembers: members, line: 0)
+
+      if overrides.kind != vkBlock:
+        raise KtgError(kind: "type", msg: "make expects a block of overrides", data: overrides)
+
       var sourceEntries: OrderedTable[string, KtgValue]
       var fieldSpecs: seq[FieldSpec] = @[]
 
@@ -176,34 +229,30 @@ proc registerObjectDialect*(eval: Evaluator) =
         sourceEntries = source.ctx.entries
       else:
         raise KtgError(kind: "type",
-          msg: "make expects an object! or context! as first argument, got " &
-               typeName(source),
+          msg: "make expects an object! or context! as first argument, got " & typeName(source),
           data: source)
 
-      # Create the new instance context
       let instance = newContext(eval.global)
 
       # Step 1: Shallow copy all entries from source
       for key, val in sourceEntries:
         instance.set(key, val)
 
-      # Step 2: Apply overrides from the block
+      # Step 2: Apply overrides (type-checked)
       let overrideCtx = newContext(eval.currentCtx)
       if overrides.blockVals.len > 0:
         discard eval.evalBlock(overrides.blockVals, overrideCtx)
         for key, val in overrideCtx.entries:
-          # Type-check overrides against field specs
           for fs in fieldSpecs:
             if fs.name == key and fs.typeName != "":
               let actual = typeName(val)
-              if actual != fs.typeName:
+              if not eval.typeMatches(actual, fs.typeName, val, eval.currentCtx):
                 raise KtgError(kind: "type",
-                  msg: "field '" & key & "' expects " & fs.typeName &
-                       ", got " & actual,
+                  msg: "field '" & key & "' expects " & fs.typeName & ", got " & actual,
                   data: val)
           instance.set(key, val)
 
-      # Step 3: Validate required fields (no default = required)
+      # Step 3: Validate required fields
       for fs in fieldSpecs:
         if not fs.hasDefault:
           if fs.name in instance.entries:
@@ -224,7 +273,6 @@ proc registerObjectDialect*(eval: Evaluator) =
           let boundFn = cloneFuncWithSelf(val.fn, instance)
           instance.set(key, KtgValue(kind: vkFunction, fn: boundFn, line: 0))
 
-      # Step 5: Return mutable context
       selfVal
     ),
     line: 0))

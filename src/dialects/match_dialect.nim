@@ -1,3 +1,4 @@
+import std/strutils
 import ../core/[types, equality]
 import ../eval/[dialect, evaluator]
 
@@ -40,9 +41,10 @@ proc matchSingleValue(pattern: KtgValue, value: KtgValue,
       bindings.add((pattern.wordName, value))
       return true
 
-    # Lit-word: 'foo matches the word "foo" literally
+    # Lit-word: 'foo matches the word "foo" literally (case-insensitive)
     if pattern.wordKind == wkLitWord:
-      if value.kind == vkWord and value.wordName == pattern.wordName:
+      if value.kind == vkWord and
+         value.wordName.toLowerAscii == pattern.wordName.toLowerAscii:
         return true
       return false
 

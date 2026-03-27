@@ -20,7 +20,7 @@ type
 proc newLoopDialect*(): LoopDialect =
   LoopDialect(
     name: "loop",
-    vocabulary: @["for", "in", "from", "to", "by", "when", "it"]
+    vocabulary: @["for", "in", "from", "to", "by", "when", "do", "it"]
   )
 
 proc parseLoopSpec(blk: seq[KtgValue], eval: Evaluator, ctx: KtgContext): LoopSpec =
@@ -77,6 +77,10 @@ proc parseLoopSpec(blk: seq[KtgValue], eval: Evaluator, ctx: KtgContext): LoopSp
     if pos < blk.len and blk[pos].kind == vkBlock:
       spec.guardBlock = blk[pos].blockVals
       pos += 1
+
+  # optional 'do' before body block
+  if pos < blk.len and blk[pos].kind == vkWord and blk[pos].wordName == "do":
+    pos += 1
 
   # body — remaining block
   if pos < blk.len and blk[pos].kind == vkBlock:

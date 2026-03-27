@@ -345,21 +345,21 @@ suite "Try and error":
 
   test "handle receives error and recovers":
     let eval = makeEval()
-    discard eval.evalString("handler: function [kind msg data] [42]")
+    discard eval.evalString("handler: function [e] [42]")
     discard eval.evalString("""result: try/handle [error 'bad "oops" none] :handler""")
     check $eval.evalString("result/ok") == "true"  # handler recovered
     check $eval.evalString("result/value") == "42"
 
   test "handle not called on success":
     let eval = makeEval()
-    discard eval.evalString("handler: function [kind msg data] [99]")
+    discard eval.evalString("handler: function [e] [99]")
     discard eval.evalString("result: try/handle [10 + 5] :handler")
     check $eval.evalString("result/ok") == "true"
     check $eval.evalString("result/value") == "15"
 
   test "handle inline function":
     let eval = makeEval()
-    discard eval.evalString("""result: try/handle [error 'fail "boom" none] function [kind msg data] [msg]""")
+    discard eval.evalString("""result: try/handle [error 'fail "boom" none] function [e] [e/message]""")
     check $eval.evalString("result/ok") == "true"
     check $eval.evalString("""result/value""") == "boom"
 

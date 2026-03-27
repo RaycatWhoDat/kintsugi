@@ -1,4 +1,4 @@
-import std/[strutils]
+import std/[strutils, math]
 import ../core/types
 
 type
@@ -99,9 +99,12 @@ proc readNumber(lex: var Lexer): KtgValue =
       numStr &= lex.advance
       hasDot = true
     elif ch == 'x' and not hasDot and not hasX:
-      # pair: 100x200
+      # pair: 100x200 or 100x-200
       hasX = true
       numStr &= lex.advance
+      # allow negative second component
+      if not lex.atEnd and lex.peek == '-':
+        numStr &= lex.advance
     elif ch == ':' and not hasDot and not hasX:
       # might be time: 14:30:00
       return lex.readTime(numStr, startLine)
@@ -197,7 +200,7 @@ proc readMoney(lex: var Lexer, startLine: int): KtgValue =
   while not lex.atEnd and (isDigit(lex.peek) or lex.peek == '.'):
     numStr &= lex.advance
   let f = parseFloat(numStr)
-  ktgMoney(int64(f * 100.0 + 0.5), startLine)
+  ktgMoney(int64(round(f * 100.0)), startLine)
 
 proc nextToken*(lex: var Lexer): KtgValue =
   lex.skipWhitespace
@@ -262,6 +265,12 @@ proc nextToken*(lex: var Lexer): KtgValue =
     discard lex.advance
     return KtgValue(kind: vkOp, opFn: nil, opSymbol: "%", line: startLine)
 
+  # chain arrow -> (method call marker)
+  if ch == '-' and lex.peekAt(1) == '>':
+    discard lex.advance  # -
+    discard lex.advance  # >
+    return ktgWord("->", wkWord, startLine)
+
   # minus as operator (not negative number — that's handled in readNumber)
   if ch == '-' and not lex.peekAt(1).isDigit:
     discard lex.advance
@@ -289,9 +298,8 @@ proc nextToken*(lex: var Lexer): KtgValue =
   if ch == '#':
     discard lex.advance
     if lex.peek == '[':
-      # inline preprocess #[expr]
-      discard lex.advance
-      return ktgWord("#[", wkMetaWord, startLine)  # special marker
+      # inline preprocess #[expr] — don't consume [, let parser handle it as block
+      return ktgWord("#inline", wkMetaWord, startLine)
     let directive = lex.readWord
     return ktgWord("#" & directive, wkMetaWord, startLine)
 

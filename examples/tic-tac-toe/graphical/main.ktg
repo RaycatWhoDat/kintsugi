@@ -40,7 +40,7 @@ cell-at: function [pos [integer!]] [
   pick board/cells pos
 ]
 
-check-end: does [
+check-end: function [] [
   lines: [
     [1 2 3] [4 5 6] [7 8 9]
     [1 4 7] [2 5 8] [3 6 9]
@@ -76,7 +76,7 @@ place: function [pos [integer!] mark [any-word!]] [
   true
 ]
 
-reset: does [
+reset: function [] [
   board/cells: [none none none none none none none none none]
   board/turn: 'x
   board/status: 'playing
@@ -105,7 +105,7 @@ find-winning: function [mark [any-word!]] [
   state/result
 ]
 
-ai-move: does [
+ai-move: function [] [
   w: find-winning 'o
   if not none? w [return w]
   b: find-winning 'x
@@ -143,7 +143,7 @@ xy-to-pos: function [mx my] [
 
 ; --- LÖVE2D callbacks ---
 
-love/draw: does [
+love/draw: function [] [
   love/graphics/clear (pick bg 1) (pick bg 2) (pick bg 3)
 
   ; grid lines

@@ -15,8 +15,8 @@ suite "object creation":
     let eval = makeEval()
     let result = eval.evalString("""
       Point: object [
-        field [x [integer!] 0]
-        field [y [integer!] 0]
+        field/optional [x [integer!] 0]
+        field/optional [y [integer!] 0]
       ]
       type Point
     """)
@@ -26,8 +26,8 @@ suite "object creation":
     let eval = makeEval()
     let result = eval.evalString("""
       Point: object [
-        field [x [integer!] 0]
-        field [y [integer!] 0]
+        field/optional [x [integer!] 0]
+        field/optional [y [integer!] 0]
       ]
       p: make Point [x: 10 y: 20]
       p/x
@@ -38,8 +38,8 @@ suite "object creation":
     let eval = makeEval()
     let result = eval.evalString("""
       Point: object [
-        field [x [integer!]]
-        field [y [integer!]]
+        field/required [x [integer!]]
+        field/required [y [integer!]]
       ]
       p: make-point 10 20
       p/y
@@ -50,8 +50,8 @@ suite "object creation":
     let eval = makeEval()
     let result = eval.evalString("""
       Point: object [
-        field [x [integer!]]
-        field [y [integer!]]
+        field/required [x [integer!]]
+        field/required [y [integer!]]
       ]
       p: make-point 10 20
       point? p
@@ -64,8 +64,8 @@ suite "object fields":
     expect KtgError:
       discard eval.evalString("""
         Person: object [
-          field [name [string!]]
-          field [age [integer!]]
+          field/required [name [string!]]
+          field/required [age [integer!]]
         ]
         p: make Person []
       """)
@@ -75,8 +75,8 @@ suite "object fields":
     expect KtgError:
       discard eval.evalString("""
         Point: object [
-          field [x [integer!] 0]
-          field [y [integer!] 0]
+          field/optional [x [integer!] 0]
+          field/optional [y [integer!] 0]
         ]
         p: make Point [x: "hello"]
       """)
@@ -85,8 +85,8 @@ suite "object fields":
     let eval = makeEval()
     let result = eval.evalString("""
       Config: object [
-        field [host [string!]]
-        field [port [integer!] 8080]
+        field/required [host [string!]]
+        field/optional [port [integer!] 8080]
       ]
       c: make Config [host: "localhost"]
       c/port
@@ -97,9 +97,9 @@ suite "object fields":
     let eval = makeEval()
     let result = eval.evalString("""
       Account: object [
-        field [owner [string!]]
-        field [balance [integer!] 0]
-        field [active [logic!] true]
+        field/required [owner [string!]]
+        field/optional [balance [integer!] 0]
+        field/optional [active [logic!] true]
         deposit: function [amount [integer!]] [
           self/balance: self/balance + amount
         ]
@@ -116,8 +116,8 @@ suite "object mutability":
     expect KtgError:
       discard eval.evalString("""
         Point: object [
-          field [x [integer!] 0]
-          field [y [integer!] 0]
+          field/optional [x [integer!] 0]
+          field/optional [y [integer!] 0]
         ]
         Point/x: 999
       """)
@@ -126,8 +126,8 @@ suite "object mutability":
     let eval = makeEval()
     let result = eval.evalString("""
       Point: object [
-        field [x [integer!] 0]
-        field [y [integer!] 0]
+        field/optional [x [integer!] 0]
+        field/optional [y [integer!] 0]
       ]
       p: make Point [x: 10 y: 20]
       p/x: 999
@@ -140,11 +140,11 @@ suite "object methods":
     let eval = makeEval()
     let result = eval.evalString("""
       Counter: object [
-        field [count [integer!] 0]
-        increment: does [
+        field/optional [count [integer!] 0]
+        increment: function [] [
           self/count: self/count + 1
         ]
-        get-count: does [
+        get-count: function [] [
           self/count
         ]
       ]
@@ -161,8 +161,8 @@ suite "object methods":
     expect KtgError:
       discard eval.evalString("""
         Thing: object [
-          field [val [integer!] 0]
-          rebind-self: does [
+          field/optional [val [integer!] 0]
+          rebind-self: function [] [
             self: 42
           ]
         ]
@@ -174,7 +174,7 @@ suite "object methods":
     let eval = makeEval()
     let result = eval.evalString("""
       Enemy: object [
-        field [hp [integer!] 100]
+        field/optional [hp [integer!] 100]
         damage: function [amount [integer!]] [
           self/hp: self/hp - amount
         ]
@@ -189,7 +189,7 @@ suite "object methods":
     let eval = makeEval()
     let result = eval.evalString("""
       Greeter: object [
-        field [name [string!]]
+        field/required [name [string!]]
         greet: function [] [
           join "Hello, " self/name
         ]
@@ -204,8 +204,8 @@ suite "object instances":
     let eval = makeEval()
     let result = eval.evalString("""
       Counter: object [
-        field [count [integer!] 0]
-        increment: does [
+        field/optional [count [integer!] 0]
+        increment: function [] [
           self/count: self/count + 1
         ]
       ]
@@ -224,6 +224,6 @@ suite "object instances":
       discard eval.evalString("""
         point!: 42
         Point: object [
-          field [x [integer!] 0]
+          field/optional [x [integer!] 0]
         ]
       """)

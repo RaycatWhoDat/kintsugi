@@ -48,7 +48,7 @@
 
 (defconst kintsugi-font-lock-keywords
   (let ((control '("if" "either" "unless" "loop" "break" "return"
-                    "function" "does" "do" "try" "match" "attempt" "parse"
+                    "function" "do" "try" "match" "attempt" "parse"
                     "not" "and" "or" "all" "any"
                     ;; Loop dialect keywords
                     "for" "in" "from" "to" "by" "when"
@@ -60,7 +60,11 @@
                     ;; Match dialect keywords
                     "default"
                     ;; Object dialect keywords
-                    "field"))
+                    "fields" "required" "optional"
+                    ;; Bindings dialect
+                    "bindings" "import"
+                    ;; Assert
+                    "assert"))
         (builtins (append
                     '("print" "probe" "compose" "reduce" "apply"
                       "select" "first" "second" "last" "pick"
@@ -71,12 +75,13 @@
                       "min" "max" "abs" "negate" "round" "sqrt"
                       "join" "rejoin" "replace" "split" "trim"
                       "uppercase" "lowercase"
-                      "starts-with?" "ends-with?"
+                      "starts-with?" "ends-with?" "substring"
                       "context" "object" "bind" "words-of" "set"
                       "freeze" "make" "to"
                       "charset" "union" "intersect"
                       "load" "require" "save" "exports"
-                      "error" "rethrow"
+                      "read-file" "write-file"
+                      "error" "rethrow" "now"
                       ;; Preprocess
                       "emit" "platform")
                     ;; Generated: integer? float? string? etc.
@@ -87,17 +92,21 @@
       ("#\\(?:preprocess\\|inline\\)" . font-lock-preprocessor-face)
       ;; Inline preprocess #[expr]
       ("#\\[" . font-lock-preprocessor-face)
-      ;; Meta-words (@enter, @exit, @type, @type/enum, @type/where)
+      ;; Meta-words (@enter, @exit, @type, @type/enum, @type/where, @const)
       ;; Not preceded by alnum (that's email)
       ("\\(?:^\\|[^[:alnum:]._-]\\)\\(@[[:alpha:]][[:alnum:]_?!~/-]*\\)"
        1 font-lock-preprocessor-face)
+      ;; Chain operator ->
+      ("->" . font-lock-keyword-face)
+      ;; Field declaration keywords (contain /)
+      ("\\bfield/\\(?:required\\|optional\\)\\b" . font-lock-keyword-face)
       ;; URL literals (before email and file to avoid partial matches)
       ("[[:alpha:]][[:alnum:]+-]*://[^] \t\n[()]*" . font-lock-string-face)
       ;; Email literals (require alnum before @ to avoid matching @meta-words)
       ("[[:alnum:]][[:alnum:]._-]*@[[:alnum:]._-]+" . font-lock-string-face)
       ;; File literals (including quoted: %"path with spaces")
       ("%\"[^\"]*\"" . font-lock-string-face)
-      ("%[[:alnum:]/._-]+" . font-lock-string-face)
+      ("%[^] \t\n[(){}]+" . font-lock-string-face)
       ;; Money literals ($19.99, $0.00)
       ("\\$[0-9]+\\(?:\\.[0-9]+\\)?" . font-lock-constant-face)
       ;; Pair literals (NxN)

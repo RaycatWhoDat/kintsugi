@@ -36,7 +36,7 @@ place-mark: function [pos [integer!] mark [any-word!]] [
   ]
 ]
 
-check-winner: does [
+check-winner: function [] [
   lines: [
     [1 2 3] [4 5 6] [7 8 9]
     [1 4 7] [2 5 8] [3 6 9]
@@ -54,7 +54,7 @@ check-winner: does [
   state/result
 ]
 
-board-full?: does [
+board-full?: function [] [
   state: context [full: true]
   loop [for [c] in board/cells [
     if none? c [state/full: false]
@@ -62,7 +62,7 @@ board-full?: does [
   state/full
 ]
 
-display: does [
+display: function [] [
   loop [for [row] from 0 to 2 [
     state: context [line: ""]
     loop [for [col] from 0 to 2 [
@@ -107,7 +107,7 @@ find-winning: function [mark [any-word!]] [
   state/result
 ]
 
-ai-move: does [
+ai-move: function [] [
   ; 1. win
   w: find-winning 'o
   if not none? w [return w]

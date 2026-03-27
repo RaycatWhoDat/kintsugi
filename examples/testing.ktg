@@ -12,7 +12,7 @@ Diana,88,94,96}
 StudentRecord: object [
   name [string!]
   scores [block!] @default []
-  average: does [
+  average: function [] [
     total: 0
     loop [for [s] in self/scores [total: total + s]]
     total / (length? self/scores)

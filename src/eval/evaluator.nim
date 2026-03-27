@@ -1,4 +1,4 @@
-import std/[strutils, tables, math]
+import std/[strutils, tables, math, sets]
 import ../core/[types, equality]
 import ../parse/parser
 import dialect
@@ -38,7 +38,8 @@ proc newEvaluator*(): Evaluator =
     output: @[],
     callStack: @[],
     dialects: @[],
-    moduleCache: initTable[string, KtgValue]()
+    moduleCache: initTable[string, KtgValue](),
+    moduleLoading: initHashSet[string]()
   )
 
 proc registerDialect*(eval: Evaluator, d: Dialect) =
@@ -99,6 +100,24 @@ proc applyOp*(eval: Evaluator, op: string, left, right: KtgValue): KtgValue =
       return ktgMoney(left.cents div right.intVal)
     else: discard
 
+  if left.kind == vkInteger and right.kind == vkMoney:
+    case op
+    of "*": return ktgMoney(left.intVal * right.cents)
+    else: discard
+
+  if left.kind == vkMoney and right.kind == vkFloat:
+    case op
+    of "*": return ktgMoney(int64(round(float64(left.cents) * right.floatVal)))
+    of "/":
+      if right.floatVal == 0.0: raise KtgError(kind: "math", msg: "division by zero", data: nil)
+      return ktgMoney(int64(round(float64(left.cents) / right.floatVal)))
+    else: discard
+
+  if left.kind == vkFloat and right.kind == vkMoney:
+    case op
+    of "*": return ktgMoney(int64(round(left.floatVal * float64(right.cents))))
+    else: discard
+
   # pair ops
   if left.kind == vkPair and right.kind == vkPair:
     case op
@@ -123,6 +142,12 @@ proc applyOp*(eval: Evaluator, op: string, left, right: KtgValue): KtgValue =
       return ktgLogic(left.strVal < right.strVal)
     if left.kind == vkMoney and right.kind == vkMoney:
       return ktgLogic(left.cents < right.cents)
+    if left.kind == vkDate and right.kind == vkDate:
+      return ktgLogic(
+        (left.year, left.month, left.day) < (right.year, right.month, right.day))
+    if left.kind == vkTime and right.kind == vkTime:
+      return ktgLogic(
+        (left.hour, left.minute, left.second) < (right.hour, right.minute, right.second))
   of ">":
     if left.kind in {vkInteger, vkFloat} and right.kind in {vkInteger, vkFloat}:
       let lf = if left.kind == vkInteger: float64(left.intVal) else: left.floatVal
@@ -132,16 +157,42 @@ proc applyOp*(eval: Evaluator, op: string, left, right: KtgValue): KtgValue =
       return ktgLogic(left.strVal > right.strVal)
     if left.kind == vkMoney and right.kind == vkMoney:
       return ktgLogic(left.cents > right.cents)
+    if left.kind == vkDate and right.kind == vkDate:
+      return ktgLogic(
+        (left.year, left.month, left.day) > (right.year, right.month, right.day))
+    if left.kind == vkTime and right.kind == vkTime:
+      return ktgLogic(
+        (left.hour, left.minute, left.second) > (right.hour, right.minute, right.second))
   of "<=":
     if left.kind in {vkInteger, vkFloat} and right.kind in {vkInteger, vkFloat}:
       let lf = if left.kind == vkInteger: float64(left.intVal) else: left.floatVal
       let rf = if right.kind == vkInteger: float64(right.intVal) else: right.floatVal
       return ktgLogic(lf <= rf)
+    if left.kind == vkString and right.kind == vkString:
+      return ktgLogic(left.strVal <= right.strVal)
+    if left.kind == vkMoney and right.kind == vkMoney:
+      return ktgLogic(left.cents <= right.cents)
+    if left.kind == vkDate and right.kind == vkDate:
+      return ktgLogic(
+        (left.year, left.month, left.day) <= (right.year, right.month, right.day))
+    if left.kind == vkTime and right.kind == vkTime:
+      return ktgLogic(
+        (left.hour, left.minute, left.second) <= (right.hour, right.minute, right.second))
   of ">=":
     if left.kind in {vkInteger, vkFloat} and right.kind in {vkInteger, vkFloat}:
       let lf = if left.kind == vkInteger: float64(left.intVal) else: left.floatVal
       let rf = if right.kind == vkInteger: float64(right.intVal) else: right.floatVal
       return ktgLogic(lf >= rf)
+    if left.kind == vkString and right.kind == vkString:
+      return ktgLogic(left.strVal >= right.strVal)
+    if left.kind == vkMoney and right.kind == vkMoney:
+      return ktgLogic(left.cents >= right.cents)
+    if left.kind == vkDate and right.kind == vkDate:
+      return ktgLogic(
+        (left.year, left.month, left.day) >= (right.year, right.month, right.day))
+    if left.kind == vkTime and right.kind == vkTime:
+      return ktgLogic(
+        (left.hour, left.minute, left.second) >= (right.hour, right.minute, right.second))
   else: discard
 
   raise KtgError(
@@ -156,6 +207,25 @@ proc applyInfix*(eval: Evaluator, result: var KtgValue,
   ## Left-to-right, no precedence. Consume infix ops while they follow.
   while pos < vals.len:
     let next = vals[pos]
+
+    # chain arrow -> (method call)
+    if next.kind == vkWord and next.wordName == "->":
+      pos += 1
+      if pos >= vals.len or vals[pos].kind != vkWord:
+        raise KtgError(kind: "type", msg: "-> expects a method name", data: nil)
+      let methodName = vals[pos].wordName
+      pos += 1
+      var methodFn: KtgValue
+      if result.kind == vkContext:
+        methodFn = result.ctx.get(methodName)
+      elif result.kind == vkObject:
+        methodFn = result.obj.get(methodName)
+      else:
+        raise KtgError(kind: "type",
+          msg: "-> requires context! or object!, got " & typeName(result),
+          data: result)
+      result = eval.callCallable(methodFn, vals, pos, ctx, result)
+      continue
 
     # operator
     if next.kind == vkOp:
@@ -307,6 +377,11 @@ proc evalNext*(eval: Evaluator, vals: seq[KtgValue], pos: var int,
       return bound
 
     of wkSetWord:
+      # skip @const annotation if present (compile-time only)
+      if pos < vals.len and vals[pos].kind == vkWord and
+         vals[pos].wordKind == wkMetaWord and vals[pos].wordName == "const":
+        pos += 1
+
       # evaluate RHS with infix
       var rhs = eval.evalNext(vals, pos, ctx)
       eval.applyInfix(rhs, vals, pos, ctx)
@@ -673,14 +748,24 @@ proc typeMatchesBuiltin*(actual, expected: string): bool =
 
 proc matchesCustomTypeByName*(eval: Evaluator, value: KtgValue, typeName: string, ctx: KtgContext): bool =
   ## Look up a custom type by name in context and check if value matches.
-  # Try to find the type in context
+  # Try to find the type with a customType object
   if ctx.has(typeName):
     let typeVal = ctx.get(typeName)
     if typeVal.customType != nil:
       return eval.matchesCustomType(value, typeVal.customType, ctx)
+  # Fallback: try the predicate function (e.g., card! -> card?)
+  let baseName = if typeName.endsWith("!"): typeName[0 .. ^2] else: typeName
+  let predicateName = baseName & "?"
+  if ctx.has(predicateName):
+    let predFn = ctx.get(predicateName)
+    if predFn.kind in {vkNative, vkFunction}:
+      var args = @[value]
+      var pos = 0
+      let res = eval.callCallable(predFn, args, pos, ctx)
+      return res.kind == vkLogic and res.boolVal
   false
 
-proc typeMatches(eval: Evaluator, actual, expected: string, value: KtgValue, ctx: KtgContext): bool =
+proc typeMatches*(eval: Evaluator, actual, expected: string, value: KtgValue, ctx: KtgContext): bool =
   ## Extended type matching that handles custom types.
   if expected == actual: return true
   if expected == "any-type!": return true
@@ -738,10 +823,6 @@ proc callCallable*(eval: Evaluator, fn: KtgValue, vals: seq[KtgValue],
     var args: seq[KtgValue] = @[]
     for i in 0 ..< f.params.len:
       if pos >= vals.len:
-        # if this param is opt, default to none
-        if f.params[i].isOpt:
-          args.add(ktgNone())
-          continue
         raise KtgError(kind: "arity",
           msg: "function expects " & $f.params.len & " arguments",
           data: nil)
@@ -755,17 +836,10 @@ proc callCallable*(eval: Evaluator, fn: KtgValue, vals: seq[KtgValue],
       # type check
       if param.typeName != "" and param.typeName != "any-type!":
         let actual = typeName(args[i])
-        if param.isOpt:
-          # opt type: accept the declared type OR none!
-          if actual != "none!" and not eval.typeMatches(actual, param.typeName, args[i], ctx):
-            raise KtgError(kind: "type",
-              msg: param.name & " expects " & param.typeName & " or none!, got " & actual,
-              data: args[i])
-        else:
-          if not eval.typeMatches(actual, param.typeName, args[i], ctx):
-            raise KtgError(kind: "type",
-              msg: param.name & " expects " & param.typeName & ", got " & actual,
-              data: args[i])
+        if not eval.typeMatches(actual, param.typeName, args[i], ctx):
+          raise KtgError(kind: "type",
+            msg: param.name & " expects " & param.typeName & ", got " & actual,
+            data: args[i])
         # Typed block check: [block! integer!] means all elements must be integer!
         if param.elementType != "" and args[i].kind == vkBlock:
           for elem in args[i].blockVals:
@@ -831,13 +905,14 @@ proc callCallable*(eval: Evaluator, fn: KtgValue, vals: seq[KtgValue],
 # --- Preprocessing (#preprocess) ---
 
 proc preprocess*(eval: Evaluator, ast: seq[KtgValue]): seq[KtgValue] =
-  ## Walk the AST looking for @preprocess meta-words followed by blocks.
+  ## Walk the AST looking for @preprocess meta-words followed by blocks,
+  ## and @#inline meta-words followed by blocks (inline preprocess #[expr]).
   ## Evaluate those blocks in a preprocess context with `emit` to splice
   ## results into the output AST.
   var hasPreprocess = false
   for v in ast:
     if v.kind == vkWord and v.wordKind == wkMetaWord and
-       v.wordName in ["preprocess", "#preprocess"]:
+       v.wordName in ["preprocess", "#preprocess", "#inline"]:
       hasPreprocess = true
       break
   if not hasPreprocess:
@@ -847,6 +922,14 @@ proc preprocess*(eval: Evaluator, ast: seq[KtgValue]): seq[KtgValue] =
   var i = 0
   while i < ast.len:
     if ast[i].kind == vkWord and ast[i].wordKind == wkMetaWord and
+       ast[i].wordName == "#inline" and i + 1 < ast.len and
+       ast[i + 1].kind == vkBlock:
+      # Inline preprocess: #[expr] — evaluate the block and splice the result
+      let value = eval.evalBlock(ast[i + 1].blockVals, eval.global)
+      if value != nil and value.kind != vkNone:
+        result.add(value)
+      i += 2
+    elif ast[i].kind == vkWord and ast[i].wordKind == wkMetaWord and
        ast[i].wordName in ["preprocess", "#preprocess"] and i + 1 < ast.len and
        ast[i + 1].kind == vkBlock:
       # Set up a preprocess context with `emit` and `platform`

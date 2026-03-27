@@ -372,11 +372,11 @@ print if [] ["empty block is truthy"]  ; empty block is truthy
 ; In REBOL, try returns the error itself or the value.
 ; Kintsugi wraps both in a result context.
 ;
-; --- object uses field keyword, not @default ---
+; --- object uses field keyword ---
 ; Kintsugi uses a prototype model with typed fields:
 ;   Person: object [
-;     field [name [string!]]
-;     field [age [integer!] 0]
+;     field/required [name [string!]]
+;     field/optional [age [integer!] 0]
 ;   ]
 ;   p: make Person [name: "Ray" age: 30]
 ; Auto-generates person! type and make-person constructor.
@@ -409,9 +409,9 @@ print if [] ["empty block is truthy"]  ; empty block is truthy
 ; --- exports is a body-level word, not a header field ---
 ; Put exports [...] in the module body, not in the header.
 ;
-; --- require is gone, use load/eval ---
-; load/eval %lib/math.ktg replaces require %lib/math.ktg.
-; load is the primitive. load/eval = load + evaluate + freeze + cache.
+; --- require is sugar for load/eval/freeze/cache ---
+; require %lib/math.ktg is equivalent to load/eval %lib/math.ktg.
+; load is the primitive. require = load + evaluate + freeze + cache.
 ;
 ; --- parse returns a context!, not logic! ---
 ; result: parse "abc" [some alpha]
@@ -489,8 +489,8 @@ make-adder: function [n] [function [x] [x + n]]
 add5: make-adder 5
 print add5 10                           ; 15
 
-; does -- shorthand for function with no parameters
-greet-world: does [print "Hello, world!"]
+; function with no parameters
+greet-world: function [] [print "Hello, world!"]
 greet-world                             ; Hello, world!
 
 
@@ -595,10 +595,177 @@ print lowercase "HELLO"                 ; hello
 print replace "hello world" "world" "Ray" ; hello Ray
 print replace "aabaa" "a" "x"          ; xxbxx (replace-all by default)
 
+; --- Series operations on strings ---
+; first, second, last, pick work on strings (1-based).
+; They return single-character strings.
+
+print first "hello"                     ; h
+print second "hello"                    ; e
+print last "hello"                      ; o
+print pick "hello" 3                    ; l
+
+; substring extracts a range (1-based start, length)
+print substring "hello world" 7 5       ; world
+
+; --- String predicates ---
+
+print starts-with? "hello world" "hello"  ; true
+print ends-with? "hello world" "world"    ; true
+print starts-with? "hello" "xyz"          ; false
+
 ; --- Escape sequences ---
 ; \n = newline, \" = quote, \\ = backslash, \t = tab
 
 print "line one\nline two"
+
+
+; ============================================================
+; DATE & TIME FACILITIES
+; ============================================================
+; now returns the current Unix epoch as integer!.
+; time and date are context objects with accessor functions.
+;
+;   now                  -- integer! (Unix epoch seconds)
+;   time/now             -- time! (current local time)
+;   date/now             -- date! (current local date)
+;   time/hours t         -- integer! (hour component)
+;   time/minutes t       -- integer! (minute component)
+;   time/seconds t       -- integer! (second component)
+;   time/to-seconds t    -- integer! (total seconds since midnight)
+;   time/from-epoch n    -- time! (time from epoch seconds)
+;   date/from-epoch n    -- date! (date from epoch seconds)
+;   date/year d          -- integer! (year component)
+;   date/month d         -- integer! (month 1-12)
+;   date/day d           -- integer! (day of month)
+;
+; Example:
+;   epoch: now
+;   t: time/now
+;   d: date/now
+;   print time/hours t
+;   print date/year d
+
+
+; ============================================================
+; FILE I/O
+; ============================================================
+; read-file and write-file are the basic file I/O primitives.
+
+; write-file %temp-test.txt "Hello from Kintsugi"
+; contents: read-file %temp-test.txt
+; print contents                          ; Hello from Kintsugi
+
+
+; ============================================================
+; SET TYPE & CHARSET
+; ============================================================
+; set! is an unordered unique collection. charset creates a
+; set! from a string of characters (custom character classes
+; for use in parse).
+
+vowels: charset "aeiou"
+consonants: charset "bcdfghjklmnpqrstvwxyz"
+alphanumeric: union (charset "abcdefghijklmnopqrstuvwxyz") (charset "0123456789")
+
+; Sets work with parse rules as character classes.
+; result: parse "hello" [some vowels | some consonants]
+
+; union and intersect combine sets
+combined: union vowels consonants
+; overlap: intersect (charset "abc") (charset "bcd")
+
+
+; ============================================================
+; COMPOSE / COMPOSE/DEEP
+; ============================================================
+; compose evaluates parens inside a block, leaving other
+; values untouched. compose/deep descends into nested blocks.
+
+; Basic compose
+val: 42
+code: compose [print (val)]             ; => [print 42]
+print second code                       ; 42
+
+; compose/deep -- evaluates parens inside nested blocks too
+inner-val: "nested"
+deep-code: compose/deep [outer [(inner-val)] done]
+probe second deep-code                  ; [nested]
+; Without /deep, the inner paren would NOT be evaluated:
+; shallow: compose [outer [(inner-val)] done]
+; second shallow => [(inner-val)] (paren untouched)
+
+
+; ============================================================
+; CHAIN OPERATOR ->
+; ============================================================
+; The -> operator calls a method on the value to its left.
+; obj -> method args is equivalent to obj/method args.
+; In Lua compilation, obj -> method emits obj:method().
+;
+; Chaining: sprite -> moveTo 200 120 -> show
+; Each -> passes the result to the next method call.
+;
+; Example:
+;   c: make Counter []
+;   c -> increment
+;   c -> increment
+;   print c -> value                    ; 2
+;
+; In compiled Lua, -> emits : (method call syntax):
+;   sprite -> moveTo 200 120            ; sprite:moveTo(200, 120)
+;   sprite -> moveTo 200 120 -> show    ; sprite:moveTo(200, 120):show()
+
+
+; ============================================================
+; BINDINGS DIALECT
+; ============================================================
+; bindings declares foreign API names for compilation targets.
+; In Script mode, bindings register placeholder natives so
+; the code parses without errors. In Lua mode, they emit
+; the correct Lua paths and calling conventions.
+;
+; Syntax:
+;   bindings [
+;     name  "lua.path"  'call min max     ; callable, min-max arity
+;     name  "lua.path"  'call arity       ; callable, fixed arity
+;     name  "lua.path"  'const            ; read-only value
+;     name  "lua.path"  'alias            ; local alias declaration
+;     name  "lua.path"  'assign           ; callback assignment (1 arg)
+;   ]
+;
+; Example for Playdate SDK:
+;   bindings [
+;     update-sprites  "playdate.graphics.sprite.update"  'call 0
+;     draw-text       "playdate.graphics.drawText"       'call 1 3
+;     display-width   "playdate.display.getWidth"        'const
+;     key-pressed     "playdate.buttonIsPressed"         'call 1
+;   ]
+
+
+; ============================================================
+; @const ANNOTATION
+; ============================================================
+; @const marks a binding as constant. In Script mode, it is
+; ignored (the interpreter skips it). In Lua 5.4 compilation,
+; it emits the <const> attribute.
+;
+;   MAX-SPEED: @const 100
+;   ; In Lua 5.4: local MAX_SPEED <const> = 100
+;
+; In the interpreter, @const is simply skipped:
+MAX-SPEED: @const 100
+print MAX-SPEED                          ; 100
+
+
+; ============================================================
+; IMPORT STATEMENT
+; ============================================================
+; import loads a Lua module path (for Playdate SDK, LOVE2D).
+; In Script mode, import is a native that returns none.
+; In Lua compilation, it emits: import "path"
+;
+;   import "CoreLibs/graphics"
+;   import "CoreLibs/sprites"
 
 
 ; ============================================================
@@ -758,6 +925,16 @@ either result/ok [
 ]
 ; Error: cannot divide by zero
 
+; --- Rethrow ---
+; rethrow re-raises an error from a try result context.
+; Useful when you catch, inspect, then decide to propagate.
+
+; result: try [error 'user "boom" none]
+; unless result/ok [
+;   print rejoin ["caught: " result/kind]
+;   rethrow result                         ; re-raises original error
+; ]
+
 ; --- Standard error kinds ---
 ; 'type       -- wrong type passed to function
 ; 'arity      -- too few arguments
@@ -793,16 +970,19 @@ either result/ok [
 ;   to    - counting end value
 ;   by    - step value (default 1 or -1 based on direction)
 ;   when  - guard clause (filter)
+;   do    - optional keyword before body block (improves readability)
 ;   it    - implicit variable when for is omitted
 
 ; --- Basic iteration ---
 
+; Body can follow the series directly, or use 'do' for clarity:
 loop [for [item] in [1 2 3 4 5] [print item]]
-; 1
-; 2
-; 3
-; 4
-; 5
+
+; With 'do' — same result, reads better in multi-line:
+loop [
+  for [item] in [6 7 8]
+  do [print item]
+]
 
 ; --- Counting ---
 
@@ -943,6 +1123,16 @@ print frozen? frozen-point              ; true
 print frozen? point                     ; false
 ; frozen-point/x: 99                    ; ERROR: cannot mutate frozen object
 
+; freeze/deep -- recursively freezes nested contexts
+; outer: context [inner: context [x: 1]]
+; frozen: freeze/deep outer
+; frozen/inner is also frozen (object!)
+
+; copy/deep -- recursively copies nested blocks and contexts
+; nested: [[1 2] [3 4]]
+; deep-clone: copy/deep nested
+; Mutating deep-clone's inner blocks does NOT affect nested.
+
 ; --- Set-word always shadows ---
 ; Inside any block that creates a new scope (function, loop,
 ; context), set-word creates a NEW binding. It never writes
@@ -978,17 +1168,22 @@ print size? c-block                     ; 5
 ; Convention: prototypes use PascalCase -- Person, Card,
 ; Reader. This distinguishes them from regular words.
 ;
-; Field syntax uses the 'field' keyword:
-;   field [name [type!]]               -- required
-;   field [name [type!] default-val]   -- with default
+; Field declarations — three forms:
+;
+;   field/required [name [type!]]              -- one required field
+;   field/optional [name [type!] default]      -- one optional field (default evaluated)
+;   fields [                                   -- bulk declaration
+;     required [name [type!] ...]
+;     optional [name [type!] default ...]
+;   ]
 ;
 ; Everything after field declarations is the body (methods).
 ; Methods access the instance via self (lexically bound).
 
-; --- Prototype with methods ---
+; --- Prototype with singular field syntax ---
 
 Counter: object [
-  field [n [integer!] 0]
+  field/optional [n [integer!] 0]
 
   increment: function [] [self/n: self/n + 1]
   value: function [] [self/n]
@@ -1002,8 +1197,8 @@ print c/value                           ; 2
 ; --- Required fields ---
 
 Person: object [
-  field [name [string!]]
-  field [age [integer!]]
+  field/required [name [string!]]
+  field/required [age [integer!]]
 
   greet: function [] [
     rejoin ["Hi, I'm " self/name " age " self/age]
@@ -1027,8 +1222,8 @@ print p/age                             ; 31 (original unchanged)
 ; --- Mixed required and defaulted fields ---
 
 Account: object [
-  field [owner [string!]]
-  field [balance [money!] $0.00]
+  field/required [owner [string!]]
+  field/optional [balance [money!] $0.00]
 
   deposit: function [amount [money!]] [
     self/balance: self/balance + amount
@@ -1045,6 +1240,32 @@ print acct/summary                      ; Ray: $100.00
 ; Override a default at creation time
 acct2: make Account [owner: "Jo" balance: $50.00]
 print acct2/summary                     ; Jo: $50.00
+
+; --- Bulk field declaration with fields [...] ---
+
+Enemy: object [
+  fields [
+    required [
+      name [string!]
+      pos [pair!]
+    ]
+    optional [
+      hp [integer!] 100
+      speed [float!] 40.0
+      state [string!] "idle"
+    ]
+  ]
+
+  damage: function [amount [integer!]] [
+    self/hp: self/hp - amount
+  ]
+]
+
+goblin: make Enemy [name: "Goblin" pos: 10x20]
+print goblin/hp                          ; 100 (default)
+print goblin/state                       ; idle (default)
+goblin/damage 25
+print goblin/hp                          ; 75
 
 ; --- Auto-generation ---
 ; When assigned to a set-word, object auto-generates:
@@ -1063,12 +1284,12 @@ print acct2/summary                     ; Jo: $50.00
 ; Compose via embedding:
 ;
 ; Damageable: object [
-;   field [hp [integer!] 100]
+;   field/optional [hp [integer!] 100]
 ;   damage: function [amount [integer!]] [self/hp: self/hp - amount]
 ; ]
 ; Enemy: object [
-;   field [stats [context!]]
-;   field [speed [float!] 40.0]
+;   field/required [stats [context!]]
+;   field/optional [speed [float!] 40.0]
 ; ]
 ; goblin: make Enemy [stats: make Damageable []]
 ; goblin/stats/damage 10
@@ -1124,8 +1345,8 @@ print acct2/summary                     ; Jo: $50.00
 ;   |         - ordered alternative (lowest precedence)
 ;   end       - match end of input
 ;   skip      - match any single element
-;   some      - one or more matches
-;   any       - zero or more matches
+;   some      - one or more matches (greedy, backtracks like REBOL)
+;   any       - zero or more matches (greedy, backtracks like REBOL)
 ;   opt       - zero or one match
 ;   not       - negative lookahead (doesn't consume)
 ;   ahead     - positive lookahead (doesn't consume)
@@ -1203,6 +1424,13 @@ digit-run: [some digit]
 ; --- parse/ok refinement ---
 ; Returns bare logic! when you only care about success.
 ; if parse/ok input [some digit] [print "all numbers"]
+
+; --- Backtracking ---
+; some and any are greedy but backtrack on failure, like REBOL.
+; parse "aab" [some "a" "ab"] succeeds: some matches "a",
+; then backtracks to let "ab" match the rest.
+; Caution: deeply nested some/any can cause exponential
+; backtracking on pathological inputs.
 
 
 ; ============================================================
@@ -1322,9 +1550,11 @@ print second result                     ; 12
   ]
 ]
 
-; Inline preprocess -- inject a value
-; x: #[1 + 2]                          ; x = 3 (preprocess time)
-; y: 10 + #[3 * 4]                     ; y = 22
+; Inline preprocess -- inject a value at preprocess time
+; #[expr] evaluates expr during preprocessing and splices
+; the result into the code stream.
+pp-val: #[1 + 2]                        ; pp-val = 3 (computed at preprocess time)
+print pp-val                            ; 3
 
 ; Platform values:
 ;   Kintsugi []          -> platform = 'script
@@ -1342,9 +1572,12 @@ print second result                     ; 12
 ;   load/freeze %file      -- parse as data + freeze = object!
 ;   load/header %file      -- return just the header block
 ;   load/fresh %file       -- skip cache for one call
+;   require/fresh %file    -- require, bypassing cache
 ;
-; load/eval replaces the old require. Results are immutable
-; object! values, cached by absolute path.
+; require is sugar for load/eval/freeze/cache. load is
+; the primitive. Results are immutable object! values,
+; cached by absolute path.
+; require/fresh forces a reload even if the module is cached.
 ;
 ; Example:
 ;   math: load/eval %lib/math.ktg
@@ -1451,10 +1684,10 @@ probe fib 10                            ; 0 1 1 2 3 5 8 13 21 34
 ; Objects with match for state transitions.
 
 TrafficLight: object [
-  field [state [string!] "red"]
-  field [timer [integer!] 0]
+  field/optional [state [string!] "red"]
+  field/optional [timer [integer!] 0]
 
-  advance: does [
+  advance: function [] [
     match self/state [
       ["red"]    [self/state: "green"  self/timer: 30]
       ["green"]  [self/state: "yellow" self/timer: 5]
@@ -1462,7 +1695,7 @@ TrafficLight: object [
     ]
   ]
 
-  display: does [
+  display: function [] [
     rejoin ["[" (uppercase self/state) "] " self/timer "s"]
   ]
 ]

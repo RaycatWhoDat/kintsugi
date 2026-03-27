@@ -846,8 +846,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!]]
-        field [age [integer!]]
+        field/required [name [string!]]
+        field/required [age [integer!]]
         greet: function [] [
           rejoin ["Hi, I'm " self/name]
         ]
@@ -860,8 +860,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Point: object [
-        field [x [integer!] 0]
-        field [y [integer!] 0]
+        field/optional [x [integer!] 0]
+        field/optional [y [integer!] 0]
       ]
     """)
     check $eval.evalString("Point/x") == "0"
@@ -871,8 +871,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Point: object [
-        field [x [integer!] 0]
-        field [y [integer!] 0]
+        field/optional [x [integer!] 0]
+        field/optional [y [integer!] 0]
       ]
     """)
     discard eval.evalString("p: make Point [x: 10 y: 20]")
@@ -883,8 +883,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Account: object [
-        field [owner [string!]]
-        field [balance [money!] $0.00]
+        field/required [owner [string!]]
+        field/optional [balance [money!] $0.00]
         deposit: function [amount [money!]] [
           self/balance: self/balance + amount
         ]
@@ -898,8 +898,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!] none]
-        field [age [integer!] 0]
+        field/optional [name [string!] none]
+        field/optional [age [integer!] 0]
         greet: function [] [
           rejoin ["Hi, I'm " self/name]
         ]
@@ -912,7 +912,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Counter: object [
-        field [n [integer!] 0]
+        field/optional [n [integer!] 0]
         increment: function [] [
           self/n: self/n + 1
         ]
@@ -928,7 +928,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Thing: object [
-        field [x [integer!] 0]
+        field/optional [x [integer!] 0]
         get-x: function [] [self/x]
       ]
     """)
@@ -941,7 +941,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Counter: object [
-        field [n [integer!] 0]
+        field/optional [n [integer!] 0]
         increment: function [] [self/n: self/n + 1]
         value: function [] [self/n]
       ]
@@ -956,7 +956,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Counter: object [
-        field [n [integer!] 0]
+        field/optional [n [integer!] 0]
         increment: function [] [self/n: self/n + 1]
       ]
     """)
@@ -974,8 +974,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!] none]
-        field [age [integer!] 0]
+        field/optional [name [string!] none]
+        field/optional [age [integer!] 0]
       ]
     """)
     discard eval.evalString("""p: make Person [name: "Ray" age: 30]""")
@@ -985,8 +985,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!] none]
-        field [age [integer!] 0]
+        field/optional [name [string!] none]
+        field/optional [age [integer!] 0]
       ]
     """)
     discard eval.evalString("x: context [foo: 1]")
@@ -996,7 +996,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!] none]
+        field/optional [name [string!] none]
       ]
     """)
     check $eval.evalString("is? :Person 42") == "false"
@@ -1007,8 +1007,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!]]
-        field [age [integer!]]
+        field/required [name [string!]]
+        field/required [age [integer!]]
       ]
     """)
     discard eval.evalString("""p: make Person [name: "Ray" age: 30]""")
@@ -1018,15 +1018,15 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!]]
-        field [age [integer!]]
+        field/required [name [string!]]
+        field/required [age [integer!]]
       ]
     """)
     check $eval.evalString("is? person! context [foo: 1]") == "false"
 
   test "PascalCase to kebab-case conversion":
     let eval = makeEval()
-    discard eval.evalString("CardReader: object [field [events [block!] []]]")
+    discard eval.evalString("CardReader: object [field/optional [events [block!] []]]")
     discard eval.evalString("r: make CardReader []")
     check $eval.evalString("is? card-reader! r") == "true"
 
@@ -1036,8 +1036,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!]]
-        field [age [integer!]]
+        field/required [name [string!]]
+        field/required [age [integer!]]
       ]
       p: make-person "Ray" 30
     """)
@@ -1048,7 +1048,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Counter: object [
-        field [n [integer!] 0]
+        field/optional [n [integer!] 0]
         increment: function [] [self/n: self/n + 1]
         value: function [] [self/n]
       ]
@@ -1062,7 +1062,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Thing: object [
-        field [x [integer!]]
+        field/required [x [integer!]]
         get-x: function [] [self/x]
       ]
     """)
@@ -1075,7 +1075,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       CardReader: object [
-        field [events [block!] []]
+        field/optional [events [block!] []]
       ]
       r: make-card-reader
     """)
@@ -1086,8 +1086,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Person: object [
-        field [name [string!]]
-        field [age [integer!]]
+        field/required [name [string!]]
+        field/required [age [integer!]]
       ]
       p: make-person "Ray" 30
     """)
@@ -1101,8 +1101,8 @@ suite "Object dialect tests":
     try:
       discard eval.evalString("""
         Point: object [
-          field [x [integer!] 0]
-          field [y [integer!] 0]
+          field/optional [x [integer!] 0]
+          field/optional [y [integer!] 0]
         ]
         Point/x: 999
       """)
@@ -1117,8 +1117,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Point: object [
-        field [x [integer!] 0]
-        field [y [integer!] 0]
+        field/optional [x [integer!] 0]
+        field/optional [y [integer!] 0]
       ]
       p: make Point [x: 10 y: 20]
       p/x: 999
@@ -1133,8 +1133,8 @@ suite "Object dialect tests":
     try:
       discard eval.evalString("""
         Thing: object [
-          field [val [integer!] 0]
-          rebind-self: does [
+          field/optional [val [integer!] 0]
+          rebind-self: function [] [
             self: 42
           ]
         ]
@@ -1154,7 +1154,7 @@ suite "Object dialect tests":
       discard eval.evalString("""
         point!: 42
         Point: object [
-          field [x [integer!] 0]
+          field/optional [x [integer!] 0]
         ]
       """)
     except KtgError as e:
@@ -1168,7 +1168,7 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Enemy: object [
-        field [hp [integer!] 100]
+        field/optional [hp [integer!] 100]
         damage: function [amount [integer!]] [
           self/hp: self/hp - amount
         ]
@@ -1184,8 +1184,8 @@ suite "Object dialect tests":
     let eval = makeEval()
     discard eval.evalString("""
       Counter: object [
-        field [count [integer!] 0]
-        increment: does [
+        field/optional [count [integer!] 0]
+        increment: function [] [
           self/count: self/count + 1
         ]
       ]
@@ -1205,8 +1205,8 @@ suite "Object dialect tests":
     try:
       discard eval.evalString("""
         Person: object [
-          field [name [string!]]
-          field [age [integer!]]
+          field/required [name [string!]]
+          field/required [age [integer!]]
         ]
         p: make Person []
       """)
@@ -1223,8 +1223,8 @@ suite "Object dialect tests":
     try:
       discard eval.evalString("""
         Point: object [
-          field [x [integer!] 0]
-          field [y [integer!] 0]
+          field/optional [x [integer!] 0]
+          field/optional [y [integer!] 0]
         ]
         p: make Point [x: "hello"]
       """)
@@ -1797,28 +1797,7 @@ suite "Typecheck tests":
       caught = true
     check caught
 
-  # -- optional parameter types --
-
-  test "opt accepts declared type":
-    let eval = makeEval()
-    check $eval.evalString("f: function [x [opt integer!]] [x]  f 42") == "42"
-
-  test "opt accepts none":
-    let eval = makeEval()
-    check $eval.evalString("f: function [x [opt integer!]] [x]  f none") == "none"
-
-  test "opt rejects wrong type":
-    let eval = makeEval()
-    var caught = false
-    try:
-      discard eval.evalString("""f: function [x [opt integer!]] [x]  f "hello" """)
-    except:
-      caught = true
-    check caught
-
-  test "opt defaults to none when omitted":
-    let eval = makeEval()
-    check $eval.evalString("f: function [a [integer!] b [opt string!]] [b]  f 1") == "none"
+  # opt parameter tests removed — opt is no longer part of function param spec
 
 # ============================================================
 # TYPES-ADVANCED TESTS (from types-advanced.test.ts)

@@ -1,20 +1,37 @@
 import ../src/core/types
-import ../src/parse/[lexer, parser]
-import ../src/emit/lua
+import ../src/eval/[dialect, evaluator, natives]
+import ../src/dialects/[loop_dialect, match_dialect, object_dialect, attempt_dialect, parse_dialect]
 
-let src = """
-  either true [
-    msg: "hi"
-    love/graphics/printf msg 0 475 480 "center"
-  ] [
-    love/graphics/printf "bye" 0 475 480 "center"
+let eval = newEvaluator()
+eval.registerNatives()
+eval.registerDialect(newLoopDialect())
+eval.registerMatch()
+eval.registerObjectDialect()
+eval.registerAttempt()
+eval.registerParse()
+
+discard eval.evalString("""
+  Card: object [
+    field/required [name [string!]]
+    field/optional [balance [money!] $0.00]
   ]
-"""
-let ast = parseSource(src)
-echo "AST len: ", ast.len
-for v in ast:
-  echo "  ", v.kind, " ", (if v.kind == vkWord: v.wordName else: $v)
+""")
 
-echo ""
-echo "--- Lua ---"
-echo emitLua(ast)
+echo "card! exists: ", eval.global.has("card!")
+echo "card? exists: ", eval.global.has("card?")
+echo "make-card exists: ", eval.global.has("make-card")
+
+discard eval.evalString("c: make-card \"Ray\"")
+echo "c type: ", $eval.evalString("type c")
+echo "card? c: ", $eval.evalString("card? c")
+echo "is? card! c: ", $eval.evalString("is? card! c")
+
+# Test the function param check
+try:
+  discard eval.evalString("""
+    f: function [x [card!]] [x]
+    f c
+  """)
+  echo "f c: passed"
+except KtgError as e:
+  echo "f c FAILED: ", e.kind, " - ", e.msg

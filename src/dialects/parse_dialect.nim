@@ -20,6 +20,14 @@ type
   CollectFrame = ref object
     values: seq[KtgValue]
 
+  BacktrackPoint = object
+    ruleIdx: int             # index into the alt sequence where some/any was
+    positions: seq[int]      # saved input positions at each match count
+    captureSnapshots: seq[OrderedTable[string, KtgValue]]
+    currentCount: int        # current match count to try next
+    minCount: int            # 1 for some, 0 for any
+    rposAfterRule: int       # rpos after skipping the some/any sub-rule
+
   ParseState = ref object
     mode: ParseMode
     # string mode
@@ -31,6 +39,8 @@ type
     captures: OrderedTable[string, KtgValue]
     collectStack: seq[CollectFrame]
     eval: Evaluator
+    breakFlag: bool
+    backtrackStack: seq[BacktrackPoint]
 
 # --- Helpers ---
 
@@ -114,7 +124,9 @@ proc skipRuleTokens(rules: seq[KtgValue], rpos: var int) =
     # set-word: consumes the next rule
     skipRuleTokens(rules, rpos)
   elif rule.kind == vkInteger:
-    # N rule: integer followed by a rule
+    # N [M] rule: integer [integer] followed by a rule
+    if rpos < rules.len and rules[rpos].kind == vkInteger:
+      rpos += 1  # skip M
     if rpos < rules.len:
       skipRuleTokens(rules, rpos)
   # All other tokens (string, block, type, lit-word, etc.) are single tokens
@@ -145,9 +157,34 @@ proc parseSingleRule(s: ParseState, rules: seq[KtgValue], rpos: var int): bool =
         return true
       return false
 
-  # --- Integer literal (could be N-times repetition) ---
+  # --- Integer literal (could be N-times or N M repetition) ---
   if rule.kind == vkInteger:
     let n = int(rule.intVal)
+    # Check for N M rule (between N and M repetitions)
+    if rpos < rules.len and rules[rpos].kind == vkInteger:
+      let m = int(rules[rpos].intVal)
+      rpos += 1  # consume M
+      if rpos < rules.len:
+        let savedPos = s.pos
+        let ruleStart = rpos
+        # Try up to M matches, need at least N
+        var count = 0
+        var positions: seq[int] = @[s.pos]  # position after 0 matches
+        var finalRpos = rpos
+        for i in 0 ..< m:
+          var subRpos = ruleStart
+          if not s.parseRule(rules, subRpos):
+            break
+          count += 1
+          finalRpos = subRpos
+          positions.add(s.pos)
+        if count < n:
+          s.pos = savedPos
+          skipRuleTokens(rules, rpos)
+          return false
+        rpos = finalRpos
+        return true
+      return false
     if rpos < rules.len:
       # N rule: exactly N repetitions of the next single rule
       let savedPos = s.pos
@@ -217,8 +254,10 @@ proc parseSingleRule(s: ParseState, rules: seq[KtgValue], rpos: var int): bool =
         return s.atEnd
 
       of "some":
-        # One or more of next rule
+        # One or more, greedy with backtrack point.
         let savedPos = s.pos
+        var positions: seq[int] = @[savedPos]
+        var capSnaps: seq[OrderedTable[string, KtgValue]] = @[s.captures]
         var count = 0
         while true:
           let beforePos = s.pos
@@ -227,18 +266,38 @@ proc parseSingleRule(s: ParseState, rules: seq[KtgValue], rpos: var int): bool =
             s.pos = beforePos
             break
           if s.pos == beforePos:
-            break  # no progress, avoid infinite loop
+            break
           count += 1
+          positions.add(s.pos)
+          capSnaps.add(s.captures)
+          if s.breakFlag:
+            s.breakFlag = false
+            break
         if count == 0:
           s.pos = savedPos
+          s.captures = capSnaps[0]
           skipRuleTokens(rules, rpos)
           return false
-        # Advance rpos past the single rule that `some` binds to
-        skipRuleTokens(rules, rpos)
+        var afterRuleRpos = rpos
+        skipRuleTokens(rules, afterRuleRpos)
+        # Push backtrack point so sequence can retry with fewer matches
+        s.backtrackStack.add(BacktrackPoint(
+          ruleIdx: 0,  # not used directly
+          positions: positions,
+          captureSnapshots: capSnaps,
+          currentCount: count - 1,  # next retry would be count-1
+          minCount: 1,
+          rposAfterRule: afterRuleRpos
+        ))
+        rpos = afterRuleRpos
         return true
 
       of "any":
-        # Zero or more of next rule
+        # Zero or more, greedy with backtrack point.
+        let savedPos = s.pos
+        var positions: seq[int] = @[savedPos]
+        var capSnaps: seq[OrderedTable[string, KtgValue]] = @[s.captures]
+        var count = 0
         while true:
           let beforePos = s.pos
           var subRpos = rpos
@@ -247,7 +306,23 @@ proc parseSingleRule(s: ParseState, rules: seq[KtgValue], rpos: var int): bool =
             break
           if s.pos == beforePos:
             break
-        skipRuleTokens(rules, rpos)
+          count += 1
+          positions.add(s.pos)
+          capSnaps.add(s.captures)
+          if s.breakFlag:
+            s.breakFlag = false
+            break
+        var afterRuleRpos = rpos
+        skipRuleTokens(rules, afterRuleRpos)
+        s.backtrackStack.add(BacktrackPoint(
+          ruleIdx: 0,
+          positions: positions,
+          captureSnapshots: capSnaps,
+          currentCount: count - 1,
+          minCount: 0,
+          rposAfterRule: afterRuleRpos
+        ))
+        rpos = afterRuleRpos
         return true
 
       of "opt":
@@ -414,7 +489,8 @@ proc parseSingleRule(s: ParseState, rules: seq[KtgValue], rpos: var int): bool =
         return false
 
       of "break":
-        # Not directly used in single rule context — handled by some/any
+        # Signal some/any loops to exit
+        s.breakFlag = true
         return true
 
       of "fail":
@@ -527,12 +603,33 @@ proc parseSequence(s: ParseState, rules: seq[KtgValue]): bool =
 
   for alt in alternatives:
     s.pos = savedPos
+    s.captures = s.captures  # preserve captures across alt attempts
+    let btStackBase = s.backtrackStack.len  # mark backtrack stack level
     var rpos = 0
     var ok = true
     while rpos < alt.len:
       if not s.parseRule(alt, rpos):
-        ok = false
-        break
+        # Try backtracking: pop the most recent backtrack point and retry
+        var retried = false
+        while s.backtrackStack.len > btStackBase:
+          var bt = s.backtrackStack.pop()
+          if bt.currentCount >= bt.minCount:
+            # Restore to fewer matches
+            s.pos = bt.positions[bt.currentCount]
+            s.captures = bt.captureSnapshots[bt.currentCount]
+            rpos = bt.rposAfterRule
+            # Push updated backtrack point for further retries
+            if bt.currentCount - 1 >= bt.minCount:
+              bt.currentCount -= 1
+              s.backtrackStack.add(bt)
+            retried = true
+            break
+        if not retried:
+          ok = false
+          break
+    # Clean up backtrack points from this alt
+    while s.backtrackStack.len > btStackBase:
+      discard s.backtrackStack.pop()
     if ok:
       return true
 
@@ -547,7 +644,9 @@ proc registerParse*(eval: Evaluator) =
   let ctx = eval.global
 
   ctx.set("parse", KtgValue(kind: vkNative,
-    nativeFn: KtgNative(name: "parse", arity: 2, fn: proc(
+    nativeFn: KtgNative(name: "parse", arity: 2,
+      refinements: @[RefinementSpec(name: "ok", params: @[])],
+      fn: proc(
         args: seq[KtgValue], ep: pointer): KtgValue =
       let eval = cast[Evaluator](ep)
       let input = args[0]
@@ -589,6 +688,10 @@ proc registerParse*(eval: Evaluator) =
       for name, val in state.captures:
         if name != "__last_collect__":
           resultCtx.set(name, val)
+
+      # If /ok refinement, return just the logic value
+      if "ok" in eval.currentRefinements:
+        return ktgLogic(ok)
 
       KtgValue(kind: vkContext, ctx: resultCtx, line: 0)
     ),
