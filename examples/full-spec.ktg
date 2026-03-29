@@ -767,7 +767,11 @@ probe second deep-code                  ; [nested]
 ;     name  "lua.path"  'const            ; read-only value
 ;     name  "lua.path"  'alias            ; local alias declaration
 ;     name  "lua.path"  'assign           ; callback assignment (1 arg)
+;     name  "lua.path"  'override         ; function definition form
 ;   ]
+;
+; 'assign emits:   lua.path = function(...) ... end
+; 'override emits: function lua.path(...) ... end
 ;
 ; Example for Playdate SDK:
 ;   bindings [
