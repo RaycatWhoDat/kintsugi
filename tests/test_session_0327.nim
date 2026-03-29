@@ -370,6 +370,48 @@ suite "random":
     check r.intVal >= 1
     check r.intVal <= 6
 
+suite "byte and char":
+  test "byte returns char code":
+    let eval = makeEval()
+    check $eval.evalString("""byte "A" """) == "65"
+    check $eval.evalString("""byte "a" """) == "97"
+
+  test "char returns string from code":
+    let eval = makeEval()
+    check $eval.evalString("char 65") == "A"
+    check $eval.evalString("char 97") == "a"
+
+  test "byte/char roundtrip":
+    let eval = makeEval()
+    check $eval.evalString("""char (byte "Z")""") == "Z"
+
+  test "byte on empty string errors":
+    let eval = makeEval()
+    discard eval.evalString("""result: try [byte ""]""")
+    check $eval.evalString("result/ok") == "false"
+
+  test "char out of range errors":
+    let eval = makeEval()
+    discard eval.evalString("result: try [char 200]")
+    check $eval.evalString("result/ok") == "false"
+
+suite "print/no-newline":
+  test "print/no-newline does not add newline":
+    let eval = makeEval()
+    eval.clearOutput()
+    discard eval.evalString("""print/no-newline "hello" """)
+    discard eval.evalString("""print/no-newline " world" """)
+    check eval.output == @["hello", " world"]
+
+suite "read/stdin":
+  # Can't easily test stdin in automated tests, but verify the refinement exists
+  test "read/stdin is callable":
+    let eval = makeEval()
+    # Just verify the native has the refinement registered
+    let readVal = eval.global.get("read")
+    check readVal.kind == vkNative
+    check readVal.nativeFn.refinements.len >= 3
+
 suite "unified series operations":
   test "find on block":
     let eval = makeEval()

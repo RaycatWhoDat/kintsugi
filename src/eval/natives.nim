@@ -21,13 +21,23 @@ proc registerNatives*(eval: Evaluator) =
   # --- Output ---
 
 
-  ctx.native("print", 1, proc(args: seq[KtgValue], ep: pointer): KtgValue =
-    let eval = cast[Evaluator](ep)
-    let s = $args[0]
-    eval.output.add(s)
-    echo s
-    ktgNone()
-  )
+  block:
+    let printNative = KtgNative(
+      name: "print",
+      arity: 1,
+      refinements: @[RefinementSpec(name: "no-newline", params: @[])],
+      fn: proc(args: seq[KtgValue], ep: pointer): KtgValue =
+        let eval = cast[Evaluator](ep)
+        let s = $args[0]
+        eval.output.add(s)
+        if "no-newline" in eval.currentRefinements:
+          stdout.write(s)
+          stdout.flushFile()
+        else:
+          echo s
+        ktgNone()
+    )
+    ctx.set("print", KtgValue(kind: vkNative, nativeFn: printNative, line: 0))
 
   ctx.native("probe", 1, proc(args: seq[KtgValue], ep: pointer): KtgValue =
     let eval = cast[Evaluator](ep)
@@ -571,6 +581,23 @@ proc registerNatives*(eval: Evaluator) =
     ktgString(s[start ..< endIdx])
   )
 
+  # --- byte/char: character code conversion ---
+
+  ctx.native("byte", 1, proc(args: seq[KtgValue], ep: pointer): KtgValue =
+    if args[0].kind != vkString or args[0].strVal.len == 0:
+      raise KtgError(kind: "type", msg: "byte expects non-empty string!", data: nil)
+    ktgInt(int64(ord(args[0].strVal[0])))
+  )
+
+  ctx.native("char", 1, proc(args: seq[KtgValue], ep: pointer): KtgValue =
+    if args[0].kind != vkInteger:
+      raise KtgError(kind: "type", msg: "char expects integer!", data: nil)
+    let code = int(args[0].intVal)
+    if code < 0 or code > 127:
+      raise KtgError(kind: "range", msg: "char code must be 0-127", data: args[0])
+    ktgString($chr(code))
+  )
+
   # --- read: unified input primitive ---
   # read %file → string
   # read/dir %path → block of filenames
@@ -581,10 +608,23 @@ proc registerNatives*(eval: Evaluator) =
       arity: 1,
       refinements: @[
         RefinementSpec(name: "dir", params: @[]),
-        RefinementSpec(name: "lines", params: @[])
+        RefinementSpec(name: "lines", params: @[]),
+        RefinementSpec(name: "stdin", params: @[])
       ],
       fn: proc(args: seq[KtgValue], ep: pointer): KtgValue =
         let eval = cast[Evaluator](ep)
+
+        if "stdin" in eval.currentRefinements:
+          # read/stdin "prompt" — read a line from stdin
+          let prompt = $args[0]
+          if prompt.len > 0 and prompt != "none":
+            stdout.write(prompt)
+            stdout.flushFile()
+          var line: string
+          if stdin.readLine(line):
+            return ktgString(line)
+          return ktgNone()
+
         let path = case args[0].kind
           of vkString: args[0].strVal
           of vkFile: args[0].filePath
