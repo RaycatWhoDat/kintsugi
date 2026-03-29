@@ -690,13 +690,26 @@ print "line one\nline two"
 
 
 ; ============================================================
-; FILE I/O
+; I/O
 ; ============================================================
-; read-file and write-file are the basic file I/O primitives.
-
-; write-file %temp-test.txt "Hello from Kintsugi"
-; contents: read-file %temp-test.txt
-; print contents                          ; Hello from Kintsugi
+; read and write are the unified I/O primitives.
+;
+; read %file             → string (file contents)
+; read/dir %path         → block of filenames
+; read/lines %file       → block of strings (one per line)
+; write %file "content"  → write string to file
+;
+; save %file value       → serialize value to file (round-trips with load/eval)
+; load %file             → parse file as Kintsugi data (block)
+; load/eval %file        → evaluate + freeze → object!
+;
+; dir? %path             → logic! (is it a directory?)
+; file? %path            → logic! (is it a file?)
+;
+;   write %temp.txt "Hello from Kintsugi"
+;   contents: read %temp.txt
+;   print contents                        ; Hello from Kintsugi
+;   entries: read/dir %lib                ; [collections.ktg math.ktg ...]
 
 
 ; ============================================================

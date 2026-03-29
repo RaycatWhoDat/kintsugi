@@ -105,13 +105,14 @@ suite "load and import":
     check $eval.evalString("size? data") == "2"  # set-word x: and integer 42
     removeFile(tmpFile)
 
-  test "load/eval returns frozen object":
+  test "load/eval returns context":
     let tmpFile = getTempDir() / "test_load_eval.ktg"
     writeFile(tmpFile, "x: 42\ny: 10")
     let eval = makeEval()
     discard eval.evalString("mod: load/eval \"" & tmpFile & "\"")
     check $eval.evalString("mod/x") == "42"
     check $eval.evalString("mod/y") == "10"
+    check $eval.evalString("context? mod") == "true"
     removeFile(tmpFile)
 
   test "import caches modules":
@@ -177,5 +178,5 @@ suite "save":
     discard eval.evalString("""m: make map! [a: 1 b: 2]""")
     discard eval.evalString("save \"" & tmpFile & "\" m")
     let content = readFile(tmpFile)
-    check content == "[a: 1 b: 2]"
+    check content == "make map! [a: 1 b: 2]"
     removeFile(tmpFile)

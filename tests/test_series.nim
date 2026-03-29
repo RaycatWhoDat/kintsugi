@@ -60,23 +60,23 @@ suite "substring":
     let eval = makeEval()
     check $eval.evalString("""substring "abc" 2 1""") == "b"
 
-suite "read-file / write-file":
+suite "read / write":
   let testFile = getTempDir() / "kintsugi_test_rw.txt"
 
   test "write and read file":
     let eval = makeEval()
-    discard eval.evalString("write-file \"" & testFile & "\" \"hello from kintsugi\"")
-    check $eval.evalString("read-file \"" & testFile & "\"") == "hello from kintsugi"
+    discard eval.evalString("write \"" & testFile & "\" \"hello from kintsugi\"")
+    check $eval.evalString("read \"" & testFile & "\"") == "hello from kintsugi"
 
-  test "read-file with string path":
+  test "read with string path":
     let eval = makeEval()
     writeFile(testFile, "test content")
-    check $eval.evalString("read-file \"" & testFile & "\"") == "test content"
+    check $eval.evalString("read \"" & testFile & "\"") == "test content"
 
-  test "read-file not found":
+  test "read not found":
     let eval = makeEval()
     expect KtgError:
-      discard eval.evalString("""read-file "/nonexistent/path.txt" """)
+      discard eval.evalString("""read "/nonexistent/path.txt" """)
 
   teardown:
     if fileExists(testFile):

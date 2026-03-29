@@ -215,9 +215,8 @@ proc initNativeBindings(): Table[string, BindingInfo] =
   # Make
   result["make"] = nativeBinding(2)
   # IO
-  result["read-file"] = nativeBinding(1)
-  result["write-file"] = nativeBinding(2)
-  result["read-dir"] = nativeBinding(1)
+  result["read"] = nativeBinding(1)
+  result["write"] = nativeBinding(2)
   result["dir?"] = nativeBinding(1)
   result["file?"] = nativeBinding(1)
   result["exit"] = nativeBinding(1)

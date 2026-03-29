@@ -421,16 +421,85 @@ suite "filesystem":
     let eval = makeEval()
     check $eval.evalString("""file? "nonexistent" """) == "false"
 
-  test "read-dir returns sorted block of strings":
+  test "read/dir returns sorted block of strings":
     let eval = makeEval()
-    let r = eval.evalString("""read-dir "lib" """)
+    let r = eval.evalString("""read/dir "lib" """)
     check r.kind == vkBlock
     check r.blockVals.len > 0
     check $r.blockVals[0] == "collections.ktg"
 
-  test "read-dir on nonexistent errors":
+  test "read/dir on nonexistent errors":
     let eval = makeEval()
-    discard eval.evalString("""result: try [read-dir "nonexistent"]""")
+    discard eval.evalString("""result: try [read/dir "nonexistent"]""")
+    check $eval.evalString("result/ok") == "false"
+
+suite "unified I/O":
+  test "read file":
+    let eval = makeEval()
+    let r = eval.evalString("""read %kintsugi.nimble""")
+    check r.kind == vkString
+    check "Kintsugi" in r.strVal
+
+  test "read/dir":
+    let eval = makeEval()
+    let r = eval.evalString("""read/dir %lib""")
+    check r.kind == vkBlock
+    check $r.blockVals[0] == "collections.ktg"
+
+  test "read/lines":
+    let eval = makeEval()
+    let r = eval.evalString("""read/lines %kintsugi.nimble""")
+    check r.kind == vkBlock
+    check r.blockVals[0].strVal.startsWith("# Package")
+
+  test "write and read roundtrip":
+    let eval = makeEval()
+    discard eval.evalString("""write %/tmp/ktg-io-test.txt "hello ktg" """)
+    check $eval.evalString("""read %/tmp/ktg-io-test.txt""") == "hello ktg"
+
+  test "save block roundtrip":
+    let eval = makeEval()
+    discard eval.evalString("""save %/tmp/ktg-save-blk.ktg [1 2 3]""")
+    let r = eval.evalString("""load %/tmp/ktg-save-blk.ktg""")
+    check r.kind == vkBlock
+    check r.blockVals.len == 1  # block containing [1 2 3]
+    check r.blockVals[0].kind == vkBlock
+
+  test "save context roundtrip via load/eval":
+    let eval = makeEval()
+    discard eval.evalString("""
+      ctx: context [x: 42 name: "Ray"]
+      save %/tmp/ktg-save-ctx.ktg ctx
+    """)
+    discard eval.evalString("""loaded: load/eval %/tmp/ktg-save-ctx.ktg""")
+    check $eval.evalString("loaded/x") == "42"
+    check $eval.evalString("loaded/name") == "Ray"
+    check $eval.evalString("context? loaded") == "true"
+
+  test "save map roundtrip via load/eval":
+    let eval = makeEval()
+    discard eval.evalString("""
+      m: make map! [a: 1 b: 2]
+      save %/tmp/ktg-save-map.ktg m
+    """)
+    discard eval.evalString("""loaded: load/eval %/tmp/ktg-save-map.ktg""")
+    check $eval.evalString("loaded/m/a") == "1"
+
+  test "load/eval returns mutable context":
+    let eval = makeEval()
+    discard eval.evalString("""write %/tmp/ktg-load-mut.ktg "x: 1" """)
+    discard eval.evalString("""c: load/eval %/tmp/ktg-load-mut.ktg""")
+    check $eval.evalString("context? c") == "true"
+
+  test "load/eval/freeze returns frozen object":
+    let eval = makeEval()
+    discard eval.evalString("""write %/tmp/ktg-load-frz.ktg "x: 1" """)
+    discard eval.evalString("""o: load/eval/freeze %/tmp/ktg-load-frz.ktg""")
+    check $eval.evalString("object? o") == "true"
+
+  test "read on nonexistent errors":
+    let eval = makeEval()
+    discard eval.evalString("""result: try [read %/nonexistent.txt]""")
     check $eval.evalString("result/ok") == "false"
 
 suite "replace refinements":
